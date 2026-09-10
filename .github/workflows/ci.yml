@@ -40,3 +40,36 @@ jobs:
             -scheme "Project AdView" \
             -destination "platform=iOS Simulator,name=$SIM_NAME" \
             CODE_SIGNING_ALLOWED=NO
+
+  flutter:
+    name: Flutter plugin (analyze, test, iOS simulator build)
+    runs-on: macos-15
+    # The Swift SDK repository carries no Flutter folder — skip there.
+    if: ${{ hashFiles('Flutter/webadview_flutter/pubspec.yaml') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Analyze and test the plugin
+        working-directory: Flutter/webadview_flutter
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+      - name: Build the example app for the simulator (resolves the SDK by local path)
+        working-directory: Flutter/webadview_flutter/example
+        env:
+          WEBADVIEW_SDK_PATH: ${{ github.workspace }}
+        run: |
+          flutter pub get
+          flutter build ios --simulator --debug
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Kotlin unit tests + Android debug build
+        working-directory: Flutter/webadview_flutter/example
+        run: |
+          flutter build apk --debug
+          (cd android && ./gradlew :webadview_flutter:testDebugUnitTest)

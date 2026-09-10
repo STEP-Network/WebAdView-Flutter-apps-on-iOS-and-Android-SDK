@@ -312,36 +312,17 @@ private struct WebViewRepresentable: UIViewControllerRepresentable {
     @Environment(\.viewabilityTracker) private var viewabilityTracker
 
     func makeUIViewController(context: Context) -> WebAdViewController {
-        let controller = WebAdViewController(
-            baseURL: baseURL,
+        WebAdViewController.make(
             adUnitId: adUnitId,
+            baseURL: baseURL,
+            customTargeting: customTargetingParams,
+            viewportResizing: viewportResizingEnabled,
             debugSettings: debugSettings,
-            customTargetingParams: customTargetingParams
+            manager: adVisibilityManager,
+            tracker: viewabilityTracker,
+            onAdSizeChange: onAdSizeChange,
+            onActiveViewImpression: onActiveViewImpression
         )
-        controller.onAdSizeChange = onAdSizeChange
-        controller.onActiveViewImpression = onActiveViewImpression
-        let id = ObjectIdentifier(controller).hashValue
-        debugPrint("[SN] [LLM] WebAdView.makeUIViewController: Created controller [\(id)] with adUnitId: \(adUnitId)")
-
-        // Set up lazy loading state observation
-        if let manager = adVisibilityManager {
-            controller.setupLazyLoadingObserver(manager: manager)
-        }
-
-        // New webview = new impression: subscribe FIRST, then re-arm — the
-        // subjects don't replay, so subscribing after resetImpression would
-        // drop the first post-reset snapshot.
-        if let tracker = viewabilityTracker {
-            controller.setupViewabilityObserver(tracker: tracker)
-            // Module-6: drive the webview's viewport from the visible slice
-            if viewportResizingEnabled {
-                controller.viewportResizingEnabled = true
-                controller.setupViewportClipObserver(tracker: tracker)
-            }
-            tracker.resetImpression(adUnitId)
-        }
-
-        return controller
     }
 
     func updateUIViewController(_ uiViewController: WebAdViewController, context: Context) {
@@ -479,9 +460,25 @@ class WebAdViewController: UIViewController, WKUIDelegate, WKNavigationDelegate,
     var remoteLazyLoadStore = RemoteLazyLoadStore()
     private var remoteConfigPollAttempts = 0
     // Consent snapshot delivered to the loaded page (reload trigger compares
-    // against it) + one-shot render re-trigger after a consent-driven reload.
+    // against it).
     private var loadedConsentJS: String?
-    private var pendingRenderAfterReload = false
+    // Render-trigger bookkeeping (one manual render event per page load):
+    // - pageLoaded: the current template page finished loading (didFinish).
+    // - pendingRenderAfterLoad: `.displayed` was observed (or a consent
+    //   reload happened while displayed) before the page was ready — fire
+    //   the trigger once it is. Hosts that create the webview late (Flutter
+    //   builds the platform view a frame + channel round-trip after
+    //   `fetched`) hit this routinely; SwiftUI hit it for consent-held ads.
+    // - hasTriggeredRender: guards against a second manual event for the
+    //   same page (a duplicate event = a duplicate ad request). The manager's
+    //   `$adStates` publisher re-emits an ad's unchanged state whenever ANY
+    //   ad transitions, so without this guard every neighbour transition
+    //   re-fired the trigger.
+    private var pageLoaded = false
+    private var pendingRenderAfterLoad = false
+    private var hasTriggeredRender = false
+    /// Test seam: number of manual render events scheduled for this controller.
+    private(set) var renderTriggerCount = 0
     // Consent observer token (block-based; must be removed explicitly)
     private var consentObserver: NSObjectProtocol?
     // Module-6: viewport resizing (honest ActiveView measurement)
@@ -520,28 +517,82 @@ class WebAdViewController: UIViewController, WKUIDelegate, WKNavigationDelegate,
         }
     }
     
+    // MARK: Factory shared by the SwiftUI representable and the UIKit host
+    /// Creates a controller wired to its scroll container's manager/tracker.
+    /// Order matters: subscribe FIRST, then re-arm the impression — the
+    /// tracker's subjects don't replay, so subscribing after
+    /// `resetImpression` would drop the first post-reset snapshot.
+    static func make(
+        adUnitId: String,
+        baseURL: String,
+        customTargeting: [String: [String]],
+        viewportResizing: Bool,
+        debugSettings: DebugSettings,
+        manager: LazyLoadingManager?,
+        tracker: ViewabilityTracker?,
+        onAdSizeChange: ((CGSize) -> Void)?,
+        onActiveViewImpression: ((String) -> Void)?
+    ) -> WebAdViewController {
+        let controller = WebAdViewController(
+            baseURL: baseURL,
+            adUnitId: adUnitId,
+            debugSettings: debugSettings,
+            customTargetingParams: customTargeting
+        )
+        controller.onAdSizeChange = onAdSizeChange
+        controller.onActiveViewImpression = onActiveViewImpression
+        let id = ObjectIdentifier(controller).hashValue
+        debugPrint("[SN] [LLM] WebAdViewController.make: Created controller [\(id)] with adUnitId: \(adUnitId)")
+
+        if let manager = manager {
+            controller.setupLazyLoadingObserver(manager: manager)
+        }
+        if let tracker = tracker {
+            controller.setupViewabilityObserver(tracker: tracker)
+            // Module-6: drive the webview's viewport from the visible slice
+            if viewportResizing {
+                controller.viewportResizingEnabled = true
+                controller.setupViewportClipObserver(tracker: tracker)
+            }
+            tracker.resetImpression(adUnitId)
+        }
+        return controller
+    }
+
     // MARK: Setup Lazy Loading Observer
     func setupLazyLoadingObserver(manager: LazyLoadingManager) {
         lazyLoadingManagerRef = manager
+        // `$adStates` replays the current value on subscribe, so an ad that
+        // is already `.displayed` is handled by the same path as a later
+        // transition — no separate "already displayed" check needed.
         lazyLoadingCancellable = manager.adStatesPublisher(for: adUnitId)
             .sink { [weak self] newState in
                 guard let self = self else { return }
                 debugPrint("[SN] [LLM] WebAdViewController[\(ObjectIdentifier(self).hashValue)]: Received state change to \(newState.rawValue) for \(self.adUnitId)")
-                
-                // Trigger ad rendering when state becomes .displayed
-                if newState == .displayed && self.hasLoadedContent {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        self.triggerAdRendering()
-                    }
+                if newState == .displayed {
+                    self.renderIfPageReadyElseDefer()
                 }
             }
-        
-        // Check if the ad is already in displayed state and trigger immediately
-        if let currentState = manager.adStates[adUnitId], currentState == .displayed && hasLoadedContent {
-            debugPrint("[SN] [LLM] WebAdViewController[\(ObjectIdentifier(self).hashValue)]: Ad already in displayed state, triggering immediately")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                self.triggerAdRendering()
-            }
+    }
+
+    /// Fires the manual render event once per loaded page: immediately if
+    /// the current page is ready, otherwise deferred to `didFinish`.
+    private func renderIfPageReadyElseDefer() {
+        guard !hasTriggeredRender else { return }
+        if pageLoaded {
+            scheduleRenderTrigger(after: 0.1)
+        } else {
+            debugPrint("[SN] [LLM] WebAdViewController[\(ObjectIdentifier(self).hashValue)]: displayed before the page finished loading — render deferred to didFinish")
+            pendingRenderAfterLoad = true
+        }
+    }
+
+    private func scheduleRenderTrigger(after delay: TimeInterval) {
+        hasTriggeredRender = true
+        pendingRenderAfterLoad = false
+        renderTriggerCount += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.triggerAdRendering()
         }
     }
 
@@ -711,10 +762,7 @@ class WebAdViewController: UIViewController, WKUIDelegate, WKNavigationDelegate,
         // ad gets no new lazy-load transition — re-trigger rendering once the
         // fresh page has finished loading.
         hasRenderedAd = false
-        if lazyLoadingManagerRef?.adStates[adUnitId] == .displayed {
-            pendingRenderAfterReload = true
-        }
-        loadAdContent()
+        loadAdContent() // re-arms the render event if the ad is displayed
     }
 
     deinit {
@@ -871,6 +919,14 @@ class WebAdViewController: UIViewController, WKUIDelegate, WKNavigationDelegate,
         guard !hasLoadedContent else { return }
         guard let webView = webView else { return }
         hasLoadedContent = true
+        // A fresh page: its render event has not fired yet. If the ad is
+        // already in the display zone (held back for consent, created late,
+        // or reloading after a consent change) the event fires on didFinish.
+        pageLoaded = false
+        hasTriggeredRender = false
+        if lazyLoadingManagerRef?.adStates[adUnitId] == .displayed {
+            pendingRenderAfterLoad = true
+        }
 
         // Template load = new impression. Without this, ads held back for
         // consent keep whatever verdict latched against the EMPTY container
@@ -1167,14 +1223,18 @@ class WebAdViewController: UIViewController, WKUIDelegate, WKNavigationDelegate,
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         remoteConfigPollAttempts = 0
         pollRemoteLazyLoadConfig()
-        // Consent-driven reload of an already-displayed ad: the lazy-load
-        // state machine fires no new transition, so re-trigger rendering
-        // exactly once for the fresh page.
-        if pendingRenderAfterReload {
-            pendingRenderAfterReload = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                self?.triggerAdRendering()
-            }
+        handlePageFinished()
+    }
+
+    /// Page-ready bookkeeping, separated from the WKNavigationDelegate entry
+    /// point so tests can drive it without a live page. A `.displayed` state
+    /// observed before the page was ready (late webview creation, consent
+    /// holdback, consent-driven reload) fires its render event exactly once
+    /// here.
+    func handlePageFinished() {
+        pageLoaded = true
+        if pendingRenderAfterLoad && !hasTriggeredRender {
+            scheduleRenderTrigger(after: 0.1)
         }
     }
 

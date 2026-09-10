@@ -21,6 +21,11 @@ final class ViewabilityTracker: ObservableObject {
     private var contentFrames: [String: CGRect] = [:]
     private var scrollViewBounds: CGRect = .zero
     private var isAppActive: Bool = true
+    /// Whether the hosting screen is itself visible. A non-SwiftUI host (the
+    /// Flutter plugin) flips this when its route is covered by another
+    /// screen: ads underneath are not human-viewable, so dwell must not
+    /// accrue. Combined with `isAppActive` on every evaluation.
+    private var isHostVisible: Bool = true
 
     private var ticker: AnyCancellable?
     private let tickInterval: TimeInterval = 0.1 // 10Hz: ±100ms on a 1s threshold (OM SDK polls at ~200ms)
@@ -83,6 +88,33 @@ final class ViewabilityTracker: ObservableObject {
         }
         engines[adUnitId] = ViewabilityEngine(adUnitId: adUnitId, mode: mode)
         debugPrint("[SN] [VIEWABILITY] Registered \(adUnitId) — mode: \(mode.rawValue), needs ≥50% for \(String(format: "%.1f", mode.requiredDuration))s continuous")
+        evaluate()
+    }
+
+    /// Forgets an ad unit: its engine, geometry and emit-policy state. The
+    /// ticker stops if no remaining engine is counting.
+    func unregister(_ adUnitId: String) {
+        guard engines.removeValue(forKey: adUnitId) != nil else { return }
+        contentFrames.removeValue(forKey: adUnitId)
+        lastSentToJS.removeValue(forKey: adUnitId)
+        lastClip.removeValue(forKey: adUnitId)
+        lastLogTime.removeValue(forKey: adUnitId)
+        debugPrint("[SN] [VIEWABILITY] Unregistered \(adUnitId)")
+        if engines.isEmpty {
+            stopTicker()
+        } else {
+            evaluate()
+        }
+    }
+
+    /// Host-screen visibility (see `isHostVisible`). Going hidden resets every
+    /// continuous timer exactly like app backgrounding does.
+    func setHostVisible(_ visible: Bool) {
+        guard isHostVisible != visible else { return }
+        isHostVisible = visible
+        debugPrint(visible
+            ? "[SN] [VIEWABILITY] host screen visible — measurement resumed"
+            : "[SN] [VIEWABILITY] host screen covered — all continuous in-view timers RESET")
         evaluate()
     }
 
@@ -154,11 +186,14 @@ final class ViewabilityTracker: ObservableObject {
         let viewport = effectiveViewport()
         let now = clock()
         var anyCounting = false
+        // An ad is only human-viewable while the app is active AND its own
+        // screen is on top; either condition resets continuous timers.
+        let isActive = isAppActive && isHostVisible
 
         for (adUnitId, engine) in engines {
             guard let frame = contentFrames[adUnitId] else { continue }
             let previousState = engine.state
-            let update = engine.ingest(adFrame: frame, viewport: viewport, isAppActive: isAppActive, at: now)
+            let update = engine.ingest(adFrame: frame, viewport: viewport, isAppActive: isActive, at: now)
             if case .counting = engine.state { anyCounting = true }
 
             updateSubject.send(update)
@@ -168,7 +203,7 @@ final class ViewabilityTracker: ObservableObject {
         }
 
         // Ticker runs only while dwell is actually accruing.
-        if anyCounting && isAppActive {
+        if anyCounting && isActive {
             startTickerIfNeeded()
         } else {
             stopTicker()

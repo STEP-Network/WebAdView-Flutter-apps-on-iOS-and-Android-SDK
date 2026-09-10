@@ -1,12 +1,13 @@
 # WebAdView SDK — Integration Guide
 
-Privacy-compliant web ads for SwiftUI apps: Didomi consent gating, scroll-based
+Privacy-compliant web ads for iOS apps (SwiftUI, and UIKit via §4b): Didomi consent gating, scroll-based
 lazy loading, Google Ad Manager targeting via STEP Network's Yield Manager
 (the ad wrapper that controls sizes, formats, and demand remotely), and
 true IAB/MRC viewability measurement.
 
-- **Platform:** iOS 16+ · Swift 5.9+ · SwiftUI
+- **Platform:** iOS 16+ · Swift 5.9+ · SwiftUI (UIKit hosts: §4b)
 - **Distribution:** Swift Package Manager (Didomi is pulled automatically)
+- **Flutter apps:** §11 — the `webadview_flutter` plugin covers iOS and Android
 
 > **New here?** Run the demo app first (*Try the demo first* in
 > [README.md](README.md)), then integrate with the 10-minute copy-paste
@@ -19,12 +20,14 @@ true IAB/MRC viewability measurement.
 [3. Consent UI](#3-consent-ui-standard-mode--sdk-owned-didomi) ·
 [3b. Your own CMP](#3b-bringing-your-own-cmp) ·
 [4. Show ads](#4-show-ads) ·
+[4b. UIKit hosts](#4b-uikit-hosts) ·
 [5. Lazy loading](#5-lazy-loading) ·
 [6. Targeting](#6-custom-targeting) ·
 [7. Viewability](#7-viewability-iabmrc) ·
 [8. Debug](#8-debug-output) ·
 [9. Checklist](#9-step-network-coordination-checklist) ·
-[10. Troubleshooting](#10-troubleshooting)
+[10. Troubleshooting](#10-troubleshooting) ·
+[11. Flutter](#11-flutter-apps)
 
 ---
 
@@ -41,6 +44,16 @@ dependencies: [
 ```
 
 Then `import WebAdViewSDK` — everything comes through the one module.
+Working from a checkout instead (**File → Add Package Dependencies… → Add
+Local…**)? Keep it at a path **without spaces** — Xcode 26.6 crashes while
+resolving the local package graph otherwise.
+
+The package ships its own privacy manifest (`PrivacyInfo.xcprivacy`: it
+uses UserDefaults for its debug flag, cached lazy-load thresholds and the
+TCF consent keys; no tracking, no collected data). Didomi carries its own
+manifest. Your app's App Store privacy answers therefore concern only what
+your ad configuration and Didomi setup collect — coordinate with STEP
+Network.
 
 > ⚠️ Use a standard Xcode **App project** — Swift Playgrounds (`.swiftpm`)
 > packages cannot embed the Didomi binary framework and crash on physical
@@ -107,7 +120,14 @@ Both values come from your STEP Network onboarding:
   external-consent mode (`Documentation/example-ad-template.html` is a
   complete working page; `Documentation/bridge-contract.md` is the spec).
   The SDK automatically appends `didomi-disable-notice=true` if missing, so
-  a bare URL is safe.
+  a bare URL is safe. Use **https** — the SDK does not add App Transport
+  Security exceptions and none are needed: the template, Yield Manager and
+  Google's ad servers are all https.
+- **Ad clicks leave the app.** Taps on a creative that navigate away from
+  the template (a different domain, a non-http(s) scheme, or a pop-up)
+  are opened in the system browser or the handling app; the ad webview
+  itself never navigates. The SDK does not filter or allow-list ad
+  destinations.
 - No setup yet? Use the test values in
   [QUICKSTART.md](QUICKSTART.md#test-values).
 - If `initialize` is never called, ads don't load and an unconditional
@@ -138,7 +158,7 @@ in your content:
 
 ```swift
 var body: some View {
-    NavigationView {
+    NavigationStack {
         ScrollView {
             VStack {
                 // …your content and WebAdViews…
@@ -148,6 +168,7 @@ var body: some View {
                 }
             }
         }
+        .lazyLoadAd()                  // required on the scroll container (§4)
     }
     .background(DidomiWrapper())   // consent notice + preferences host
 }
@@ -191,6 +212,10 @@ Because they share that binary, this provider asks Didomi directly whether
 the user has **actually answered** the notice — the most precise gate this
 mode can have. (A second Didomi copy via CocoaPods or a manually embedded
 framework would collide with the SDK's — don't mix installation methods.)
+The SDK requires `didomi-ios-sdk-spm` **2.44.0 or newer** (SwiftPM resolves
+one version for both); call `WebAdViewSDK.warnIfDuplicateDidomi()` once at
+launch in this mode — it prints an `[SN] [ERROR]` if two Didomi copies are
+linked.
 
 In this mode:
 
@@ -208,11 +233,12 @@ In this mode:
 - For setups beyond TCF, implement the small `ConsentProvider` protocol
   yourself (`Sources/WebAdViewSDK/Consent/ConsentProvider.swift`).
 
-> ⚠️ This mode has been verified end-to-end in STEP Network's reference
-> setups (app-owned Didomi, and Usercentrics/Cookiebot via a TCF 2.2
-> configuration: consent gate, ad delivery, and reload-on-change all
-> confirmed against live test ads). Each publisher's own setup must still
-> be validated with STEP Network before production.
+> ⚠️ What has been verified so far: Cookiebot (Usercentrics, TCF 2.2) in
+> the iOS simulator, and — on both iOS and Android through the Flutter
+> plugin — a simulated TCF CMP plus app-owned Didomi, each proving that ads
+> wait for the answer, load on it and reload when it changes. Other CMPs
+> use the same mechanism; each publisher's own setup must still be
+> validated with STEP Network before production.
 
 ### Pre-launch check for a non-Didomi CMP (and the fix if it fails)
 
@@ -299,9 +325,11 @@ ScrollView {
 ```
 
 > **`.lazyLoadAd()` is required, not optional.** It installs the loading
-> and viewability machinery; without it, `WebAdView`s stay blank forever.
-> Attach it to the scroll container that holds your ads — `ScrollView` and
-> `List` both work (see §5 for the `List` difference).
+> and viewability machinery; without it, `WebAdView`s stay blank forever —
+> an empty placeholder at the initial size (320×320 by default) and **no
+> log line at all**, not even with debug on. Attach it to the scroll
+> container that holds your ads — `ScrollView` and `List` both work (see §5
+> for the `List` difference).
 
 **⚠️ Ad unit IDs, sizes, and formats are configured remotely by STEP
 Network's Yield Manager.** Local frame constraints are UI-layout only —
@@ -329,6 +357,83 @@ WebAdView(adUnitId: "div-gpt-ad-mobile_1")
     .id(adKey)          // change adKey (e.g. UUID()) to fully recreate the ad
 ```
 
+### Ad clicks
+
+A tap on a creative that navigates away from the template — another
+domain, a non-http(s) scheme, or a pop-up window — is opened in the system
+browser (or the app that handles the scheme); the ad webview never
+navigates away from the template page. Nothing to configure.
+
+## 4b. UIKit hosts
+
+The SwiftUI `WebAdView` + `.lazyLoadAd()` pair is built on a public UIKit
+layer you can use directly in a `UIScrollView` / `UITableView` /
+`UICollectionView` screen. The state machines are the same; only the
+geometry source differs — **you** tell the scope where things are, in
+window coordinates (points), whenever they change:
+
+```swift
+import Combine
+import WebAdViewSDK
+
+final class FeedViewController: UITableViewController {
+    private let adScope = WebAdScope()               // one per scrolling screen
+    private var hostViews: [String: WebAdHostView] = [:]
+    private var cancellables = Set<AnyCancellable>()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        WebAdViewSDK.setupConsentUI(containerController: self)   // once, standard mode only
+        for adUnitId in ["div-gpt-ad-mobile_1", "div-gpt-ad-mobile_2"] {
+            adScope.register(adUnitId)
+            adScope.loadStates(for: adUnitId)
+                .sink { [weak self] state in
+                    // Create the host view only once the scope says `.fetched`
+                    guard let self, state == .fetched, self.hostViews[adUnitId] == nil else { return }
+                    self.hostViews[adUnitId] = WebAdHostView(adUnitId: adUnitId, scope: self.adScope)
+                    self.tableView.reloadData()
+                }
+                .store(in: &cancellables)
+        }
+    }
+
+    override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        adScope.updateViewport(tableView.convert(tableView.bounds, to: nil))
+        for (adUnitId, host) in hostViews where host.window != nil {
+            let frame = host.convert(host.bounds, to: nil)
+            adScope.updateAdFrame(adUnitId, frame: frame)        // whole ad → lazy loading
+            adScope.updateCreativeFrame(adUnitId, frame: frame)  // creative only → viewability
+        }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        adScope.setHostVisible(false)                           // covered screens stop measuring
+    }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        adScope.setHostVisible(true)
+    }
+
+    deinit {
+        hostViews.values.forEach { $0.unload() }
+        hostViews.keys.forEach(adScope.unregister)
+    }
+}
+```
+
+Rules of the road: register every ad unit with the scope before its host
+view exists; feed `updateViewport` and the two frame updates on every
+scroll/layout change (the creative frame excludes your own "annonce" label
+if you draw one); create `WebAdHostView` only after `loadState(for:)` /
+`loadStates(for:)` reports `.fetched`; `viewabilityUpdates(for:)` and
+`WebAdHostView.onActiveViewImpression` give you the same signals as §7;
+`onAdSizeChange` tells you the delivered creative size so your cell can
+resize; call `unload()` and `unregister` when the screen goes away. All
+calls are main-thread only. The Flutter plugin's iOS adapter
+(`Flutter/webadview_flutter/ios/.../WebAdPlatformView.swift`) is a complete
+reference consumer of this layer.
+
 ## 5. Lazy loading
 
 ```swift
@@ -338,17 +443,20 @@ WebAdView(adUnitId: "div-gpt-ad-mobile_1")
 ```
 
 States per ad: `notLoaded → fetched` (HTML loads) `→ displayed` (ad
-renders). With unloading enabled, ads >1600pt away for 2s are torn down and
+renders). With unloading enabled, ads outside the unload zone (default
+1600pt, never closer than the fetch distance) for 2s are torn down and
 recreated on re-entry. Unloading is **off by default** (UX over memory).
 
 **The distances are managed remotely by STEP Network.** Each publisher
-domain gets its own tuned fetch/display values, expressed as **percentages
-of the screen height** (100 = one full screen; fetch 150 / display 100 =
-"request 1.5 screens early, show one screen early"). The SDK reads them
-from the loaded ad page and remembers them between launches. **The remote
-values always win:** the numbers in your code — defaults *and* custom
-`.lazyLoadAd(fetchThreshold:...)` values — are only starting values used
-until STEP Network's values arrive. You don't need to configure anything.
+domain gets its own tuned fetch/render values, expressed as **percentages
+of the scroll container's visible height** (100 = one viewport; fetch 150 /
+render 100 = "start loading 1.5 viewports early, request and show one
+viewport early"). The SDK reads them from the loaded ad page and remembers
+them between launches. **The remote values win for fetch and display:** the
+numbers in your code — defaults *and* custom `.lazyLoadAd(fetchThreshold:...)`
+values — are only starting values used until STEP Network's values arrive.
+`unloadThreshold` and `unloadingEnabled` are yours and are never overridden.
+You don't need to configure anything.
 
 ### Using a `List` instead of a `ScrollView`
 
@@ -394,9 +502,10 @@ WebAdView(adUnitId: "div-gpt-ad-mobile_1")
     }
 ```
 
-`ViewabilityUpdate` fields: `ratio` (0–1 fraction of pixels on screen),
-`isVisible` (≥50% and app active), `dwell` (continuous seconds in view),
-`isViewable` (latched verdict), `becameViewable`, `mode`, `isAppActive`.
+`ViewabilityUpdate` fields: `adUnitId`, `ratio` (0–1 fraction of pixels on
+screen), `isVisible` (≥50% and app active), `dwell` (continuous seconds in
+view), `isViewable` (latched verdict), `becameViewable`, `mode`,
+`isAppActive`, `timestamp`.
 
 ### Google's own verdict: `.onActiveViewImpression()`
 
@@ -464,14 +573,21 @@ ladybug button is exactly that — so logging can be turned on in a
 production build while investigating an issue.
 
 With debugging on: `[SN] [VIEWABILITY]` live per-ad measurement lines
-(ratio, timer, `✅ VIEWABLE (latched)`), `[SN] [LLM]` lazy-loading
-transitions, `[SN] [NATIVE]` / `[HTML]` consent flow and bridged page
-console output, plus an in-webview debug panel and Yield Manager debug
-mode (`aym_debug=true`). Watch live from a terminal:
+(ratio, timer, `✅ VIEWABLE (latched)`) and `[SN] [VIEWABILITY] [ACTIVEVIEW]`
+for Google's verdicts, `[SN] [LLM]` lazy-loading transitions, `[SN] [CLIP]`
+viewport resizing, `[SN] [NATIVE]` consent flow and setup,
+`[SN] [WebAdView] [HTML]` bridged page console output, plus an in-webview
+debug panel and Yield Manager debug mode (`aym_debug=true`). `[SN] [ERROR]`
+lines print regardless of the flag. Watch live from a terminal:
 
 ```bash
-xcrun simctl launch --console-pty booted <your-bundle-id> | grep VIEWABILITY
+xcrun simctl launch --console-pty booted <your-bundle-id> | grep --line-buffered VIEWABILITY
 ```
+
+**Automated tests:** a fresh install holds ads back until the notice is
+answered. In debug builds `WebAdViewSDK.acceptAllConsentForTesting()`
+grants full consent through Didomi's API (compiled out of release); the
+demo app maps the launch argument `-SNConsentAcceptAll YES` to it.
 
 ### Footprint and performance
 
@@ -483,13 +599,16 @@ content costs in any app — bounded by lazy loading no matter how long
 the feed is. It will not make an app feel slow.
 
 **Install size:** the SDK adds about **8 MB** to the installed app
-(measured on a Release device build): ~7 MB is the embedded Didomi
-framework — included in every consent mode, also with an app-owned CMP —
+(re-measured 2026-09-10 on a Release arm64 device build of the demo app:
+8.4 MB in total, of which 7.1 MB is the Didomi framework bundle and the
+rest the app binary with the SDK's ~1 MB of code): ~7 MB is the embedded
+Didomi framework — included in every consent mode, also with an app-owned CMP —
 and ~1 MB is the SDK code itself. App Store downloads are compressed, so
 the over-the-wire size is smaller.
 
-**Runtime cost** (A/B-measured against an identical screen without ads;
-simulator numbers — treat as indicative):
+**Runtime cost** (A/B-measured on the demo app against an identical screen
+without ads; simulator numbers, not reproduced by any script in this
+repository — treat as indicative):
 
 - SDK initialized, no ads loaded yet: ≈ **+7 MB** app memory.
 - Two ads loaded and rendered: ≈ **+30–45 MB** in the app process —
@@ -519,20 +638,40 @@ Before shipping, confirm with STEP Network:
 - [ ] If bringing your own CMP (§3b): ad template page without a CMP web
       tag, and end-to-end validation with STEP Network before launch —
       including the pre-answer consent check (§3b) for non-Didomi CMPs
+- [ ] App Store privacy answers: the SDK's own manifest is included (§1);
+      declare what your ad configuration and Didomi setup collect
+- [ ] Debug flag off in release (§8) — it is remembered between launches
 
 ## 10. Troubleshooting
 
 | Symptom | Check |
 |---|---|
 | Ads never load | Was `WebAdViewSDK.initialize(config:)` called? Is consent given (notice answered)? Standard mode: is `DidomiWrapper` in the hierarchy? |
-| Ads never load (own-CMP mode, §3b) | Has your CMP recorded an answer? It must have written `IABTCF_TCString` to UserDefaults (or `IABTCF_gdprApplies = 0`). |
+| Ads never load (own-CMP mode, §3b) | Has your CMP recorded an answer? It must have written `IABTCF_TCString` to UserDefaults (or `IABTCF_gdprApplies = 0`). Is the template the own-CMP variant (no consent web tag)? |
 | No consent notice appears (own-CMP mode, §3b) | Expected — the SDK never shows one in this mode; your own CMP does. |
 | Build error: `missing required modules: 'JavaScriptCore', 'SystemConfiguration'` | Update to a SDK version ≥ this one (the SDK carries the imports); clean build folder. |
 | No debug output | Enable the debug flag (ladybug / `DebugSettings.shared.isDebugEnabled = true`). |
+| Ads stay an empty 320×320 box, no `[SN] [LLM]` lines | `.lazyLoadAd()` is missing on the scroll container (§4). |
 | Ads clipped/distorted | Remove restrictive `.frame()`/max constraints, or align them with STEP Network's Yield Manager config. |
 | Viewability never latches | The ad must be ≥50% on screen continuously — check the `[SN] [VIEWABILITY]` ratio lines; nav bars/safe areas clip the effective viewport. |
 | Targeting has no effect | Keys must be configured by STEP Network in GAM first. |
 | Many ads = jank | Apply `.lazyLoadAd()` to the ScrollView; consider `unloadingEnabled: true`. |
+
+## 11. Flutter apps
+
+Publishers whose app is built with Flutter use the **`webadview_flutter`**
+plugin in `Flutter/webadview_flutter/` instead of the SwiftUI API. It
+exposes the same concepts under one Dart API — `WebAdViewSdk.initialize`,
+a required `LazyLoadAdScope` around the scrollable (the `.lazyLoadAd()`
+equivalent), and a `WebAdView` widget with targeting, viewability and
+Active View callbacks — and renders through this native SDK on iOS, so
+consent gating, lazy loading, remote thresholds and viewability behave
+exactly as described in this guide, and through a Kotlin port of the same
+contract (`Documentation/bridge-contract.md`) on Android (7+). It is
+distributed from its own repository,
+`https://github.com/STEP-Network/WebAdView-Flutter-apps-on-iOS-and-Android-SDK.git`,
+which also carries this Swift package. Integration guide:
+[Flutter/webadview_flutter/README.md](Flutter/webadview_flutter/README.md).
 
 ## Development (this repo)
 
@@ -550,3 +689,9 @@ xcodebuild build -project "Example/Project AdView.xcodeproj" -scheme "Project Ad
 
 > `swift test` from the repo root does **not** work — Didomi is an iOS-only
 > binary framework, so the suites must run on a simulator via `xcodebuild`.
+
+```bash
+# Flutter plugin (needs the Flutter SDK):
+cd Flutter/webadview_flutter && flutter analyze && flutter test
+cd example && flutter build ios --simulator --debug
+```

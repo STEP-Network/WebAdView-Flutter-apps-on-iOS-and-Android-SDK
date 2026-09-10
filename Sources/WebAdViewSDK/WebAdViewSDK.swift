@@ -1,4 +1,6 @@
 import Foundation
+import UIKit
+import MachO
 // Didomi's binary framework interface imports these system modules; importing
 // them here puts them in the module graph of every consumer, so apps linking
 // WebAdViewSDK don't hit "missing required modules: JavaScriptCore,
@@ -104,6 +106,42 @@ public enum WebAdViewSDK {
     /// no-op (open that CMP's UI from the app instead).
     public static func showConsentPreferences() {
         configuration?.consentProvider.showPreferences()
+    }
+
+    /// Gives the SDK-owned Didomi a view controller to present the consent
+    /// notice and preferences from. SwiftUI apps get this from
+    /// `DidomiWrapper`; non-SwiftUI hosts (UIKit, the Flutter plugin) call
+    /// this once with their root view controller. No-op unless the standard
+    /// (SDK-owned Didomi) mode is configured.
+    public static func setupConsentUI(containerController: UIViewController) {
+        guard configuration?.consentProvider is DidomiConsentProvider else {
+            debugPrint("[SN] [NATIVE] setupConsentUI ignored — the app owns the consent UI in this mode")
+            return
+        }
+        Didomi.shared.setupUI(containerController: containerController)
+    }
+
+    /// Mis-integration diagnostic (debug builds only): warns, un-gated, when
+    /// two Didomi binaries are linked into the process — e.g. a Flutter app
+    /// that pulls Didomi both through this SDK (SwiftPM) and through a
+    /// CocoaPods-installed CMP plugin. Two copies fight over the same
+    /// storage and UI; the fix is one installation method (GUIDE.md §3b).
+    public static func warnIfDuplicateDidomi() {
+        #if DEBUG
+        var didomiImages = 0
+        for index in 0..<_dyld_image_count() {
+            guard let cName = _dyld_get_image_name(index) else { continue }
+            if String(cString: cName).hasSuffix("/Didomi.framework/Didomi") {
+                didomiImages += 1
+            }
+        }
+        if didomiImages > 1 {
+            print("""
+            [SN] [ERROR] \(didomiImages) copies of the Didomi framework are linked into this app. \
+            Use ONE installation method for Didomi (see GUIDE.md "Bringing your own CMP").
+            """)
+        }
+        #endif
     }
 
     #if DEBUG

@@ -87,6 +87,18 @@ package class LazyLoadingManager: ObservableObject {
         }
     }
 
+    /// Forgets an ad unit entirely (frame, state, unload candidacy). Hosts
+    /// that destroy and re-create ad views (Flutter widgets, recycled rows)
+    /// call this so a stale frame cannot keep transitioning a ghost ad.
+    package func removeAd(_ adId: String) {
+        adUnitFrames.removeValue(forKey: adId)
+        unloadCandidates.removeValue(forKey: adId)
+        if adStates[adId] != nil {
+            adStates.removeValue(forKey: adId)
+            debugPrint("[SN] [LLM] Ad \(adId) removed from lazy loading")
+        }
+    }
+
     // Provides a Publisher for a specific ad unit's state
     package func adStatesPublisher(for adId: String) -> AnyPublisher<AdLoadState, Never> {
         $adStates

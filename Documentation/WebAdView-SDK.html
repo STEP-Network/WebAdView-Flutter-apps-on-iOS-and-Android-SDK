@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WebAdView SDK — how it works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #111827; --muted: #6b7280; --faint: #9ca3af; --line: #e5e7eb; --paper: #ffffff;
+    --purple: #6d28d9; --purple-bg: #f5f3ff; --purple-line: #c4b5fd;
+    --blue: #2563eb;   --blue-bg: #eff6ff;   --blue-line: #93c5fd;
+    --orange: #d97706; --orange-bg: #fff7ed; --orange-line: #fdba74;
+    --green: #15803d;  --green-bg: #f0fdf4;  --green-line: #86efac;
+    --red: #dc2626;    --red-bg: #fef2f2;    --red-line: #fca5a5;
+    --code-bg: #1f2937; --code-fg: #e5e7eb; --code-str: #fbbf24; --code-cm: #9ca3af; --code-kw: #93c5fd;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--paper); color: var(--ink); }
+  body { font-family: 'Lato', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 10.5pt; line-height: 1.5; }
+  @page { size: A4; margin: 0; }
+  .page { position: relative; width: 210mm; height: 297mm; padding: 16mm 17mm 18mm 17mm; overflow: hidden; page-break-after: always; break-after: page; background: var(--paper); }
+  .page:last-child { page-break-after: auto; break-after: auto; }
+  .hdr { display: flex; justify-content: space-between; font-size: 7.5pt; letter-spacing: 0.22em; text-transform: uppercase; color: var(--faint); margin-bottom: 7mm; }
+  .ftr { position: absolute; left: 17mm; right: 17mm; bottom: 9mm; display: flex; justify-content: space-between; font-size: 7.5pt; color: var(--faint); border-top: 1px solid var(--line); padding-top: 2.2mm; }
+  .kicker { font-size: 7.5pt; letter-spacing: 0.22em; text-transform: uppercase; color: var(--blue); font-weight: 700; margin: 0 0 1mm; }
+  h1 { font-size: 22pt; font-weight: 900; letter-spacing: -0.01em; margin: 0 0 3mm; line-height: 1.15; }
+  h2 { font-size: 7.5pt; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 7mm 0 3mm; }
+  p { margin: 0 0 3.2mm; }
+  .lead { font-size: 11pt; color: #1f2937; }
+  strong { font-weight: 700; }
+  code { font-family: 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 8.4pt; background: #f3f4f6; padding: 0.1em 0.35em; border-radius: 3px; color: #111827; }
+  pre { font-family: 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 7.9pt; line-height: 1.45; background: var(--code-bg); color: var(--code-fg); padding: 4mm 4.5mm; border-radius: 3mm; margin: 0 0 3mm; white-space: pre; overflow: hidden; }
+  pre .s { color: var(--code-str); } pre .c { color: var(--code-cm); font-style: italic; } pre .k { color: var(--code-kw); } pre .w { color: #fca5a5; font-weight: 600; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+  .cols3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4.5mm; }
+  .cols > *, .cols3 > * { min-width: 0; }
+  .col-wide { grid-template-columns: 1fr 1.15fr; }
+  .card { border: 1px solid var(--line); border-radius: 2.5mm; padding: 3.2mm 3.8mm; background: #fff; margin-bottom: 3mm; }
+  .card h4 { margin: 0 0 0.8mm; font-size: 9.5pt; }
+  .card p { margin: 0; font-size: 9pt; color: #374151; }
+  .callout { border-left: 3px solid var(--blue); background: #f9fafb; border-radius: 2mm; padding: 3mm 3.8mm; margin: 0 0 3.5mm; font-size: 9.3pt; }
+  .callout.orange { border-left-color: #f59e0b; } .callout.green { border-left-color: #22c55e; } .callout.purple { border-left-color: var(--purple); } .callout.grey { border-left-color: #9ca3af; }
+  .tone-purple { border-color: var(--purple-line); background: var(--purple-bg); }
+  .tone-blue { border-color: var(--blue-line); background: var(--blue-bg); }
+  .tone-orange { border-color: var(--orange-line); background: var(--orange-bg); }
+  .tone-green { border-color: var(--green-line); background: var(--green-bg); }
+  .tone-grey { border-color: var(--line); background: #f9fafb; }
+  .c-purple { color: var(--purple); } .c-blue { color: var(--blue); } .c-orange { color: var(--orange); } .c-green { color: var(--green); } .c-red { color: var(--red); }
+  .steps { list-style: none; margin: 0; padding: 0; }
+  .steps li { display: grid; grid-template-columns: 7mm 1fr; gap: 3mm; margin-bottom: 3.2mm; align-items: start; }
+  .num { width: 6.2mm; height: 6.2mm; border-radius: 50%; color: #fff; font-weight: 700; font-size: 8.5pt; display: flex; align-items: center; justify-content: center; margin-top: 0.4mm; }
+  .steps h4 { margin: 0 0 0.6mm; font-size: 10pt; }
+  .steps p { margin: 0; font-size: 9.3pt; color: #374151; }
+  .arrow-down { text-align: center; color: var(--faint); font-size: 12pt; line-height: 1; margin: 1.5mm 0; }
+  .flow { display: flex; align-items: stretch; gap: 3mm; }
+  .flow .arr { align-self: center; color: var(--faint); font-size: 13pt; }
+  .flow .card { flex: 1; margin: 0; }
+  .needs { border: 1px solid var(--line); border-radius: 2.5mm; overflow: hidden; }
+  .needs div { display: grid; grid-template-columns: 8mm 1fr; padding: 2.6mm 3.5mm; border-top: 1px solid var(--line); font-size: 9.5pt; align-items: baseline; }
+  .needs div:first-child { border-top: 0; }
+  .needs b.n { color: var(--blue); font-size: 12pt; font-weight: 900; }
+  table.plain { border-collapse: collapse; width: 100%; font-size: 9pt; }
+  table.plain th, table.plain td { text-align: left; padding: 2.2mm 2.5mm; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.plain th { font-size: 7.5pt; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .small { font-size: 8.8pt; color: var(--muted); }
+  .tag { display: inline-block; font-size: 7pt; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; padding: 0.4mm 1.8mm; border-radius: 1mm; margin-right: 1mm; }
+  .tag.ios { background: var(--blue-bg); color: var(--blue); } .tag.android { background: var(--green-bg); color: var(--green); } .tag.flutter { background: var(--purple-bg); color: var(--purple); }
+  .platform-row { display: flex; gap: 3mm; margin: 2mm 0 4mm; }
+  .platform-row .card { flex: 1; margin: 0; }
+
+  /* Phone illustrations */
+  .phone { width: 42mm; height: 82mm; border: 1.6px solid #111; border-radius: 6mm; padding: 4mm 3.5mm; background: #fff; position: relative; overflow: hidden; }
+  .phone.sm { width: 30mm; height: 50mm; border-radius: 4.5mm; padding: 3mm 2.6mm; }
+  .phone.xs { width: 22mm; height: 42mm; border-radius: 3.5mm; padding: 2.2mm 2mm; }
+  .ln { height: 1.4mm; background: #e5e7eb; border-radius: 1mm; margin-bottom: 1.8mm; }
+  .ln.w60 { width: 60%; } .ln.w80 { width: 80%; } .ln.w45 { width: 45%; }
+  .phone.sm .ln { height: 1.1mm; margin-bottom: 1.4mm; } .phone.xs .ln { height: 0.9mm; margin-bottom: 1.1mm; }
+  .ad { border: 1px solid var(--blue-line); background: var(--blue-bg); border-radius: 1.5mm; color: var(--blue); font-weight: 700; text-align: center; font-size: 7.5pt; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .ad small { font-weight: 400; font-size: 6pt; color: #4b5563; }
+  .ad.green { border-color: var(--green-line); background: var(--green-bg); color: var(--green); }
+  .ad.orange { border-color: var(--orange-line); background: var(--orange-bg); color: var(--orange); }
+  .ad.empty { border-style: dashed; border-color: #d1d5db; background: #fafafa; color: var(--faint); font-weight: 400; }
+  .ad.dim { border-style: dashed; border-color: #d1d5db; background: #f9fafb; color: var(--faint); }
+  .annonce { font-size: 5.5pt; letter-spacing: 0.2em; color: var(--faint); text-align: center; margin: 1.5mm 0 1mm; }
+  .cut { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--red); }
+  .cut span { position: absolute; right: 1.5mm; top: -3.2mm; font-size: 5pt; color: var(--red); }
+  .consent-box { border: 1px solid var(--purple-line); background: var(--purple-bg); border-radius: 1.5mm; padding: 1.5mm; text-align: center; font-size: 6pt; color: #4b5563; }
+  .consent-box .btn { display: block; margin: 1mm auto 0; width: 80%; border-radius: 1mm; font-size: 6pt; padding: 0.5mm 0; font-weight: 700; }
+  .btn.acc { background: var(--purple); color: #fff; } .btn.dec { border: 1px solid #d1d5db; color: #4b5563; background: #fff; }
+  .check { position: absolute; width: 6mm; height: 6mm; border-radius: 50%; background: var(--green); color: #fff; font-size: 8pt; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+  .pw { position: relative; display: inline-block; vertical-align: top; }
+  .pw .below { position: absolute; top: 100%; border: 1px dashed #cbd5e1; border-top: 0; background: #f8fafc; color: #94a3b8; font-size: 5.5pt; line-height: 1.25; text-align: center; display: flex; align-items: center; justify-content: center; border-radius: 0 0 1.5mm 1.5mm; padding: 0 1mm; }
+  .slice { position: absolute; bottom: 0; border-bottom: 0 !important; border-radius: 1.5mm 1.5mm 0 0 !important; }
+  .cap { text-align: center; font-size: 8pt; color: var(--muted); margin-top: 1.8mm; }
+  .cap b { color: var(--ink); }
+
+  /* Cover */
+  .cover { text-align: center; padding-top: 34mm; }
+  .cover .brand { font-size: 9pt; letter-spacing: 0.32em; color: var(--muted); font-weight: 700; }
+  .cover .brand small { display: block; font-size: 7pt; letter-spacing: 0.22em; font-weight: 400; color: var(--faint); margin-top: 1mm; }
+  .cover h1 { font-size: 40pt; margin: 16mm 0 0; letter-spacing: -0.02em; }
+  .cover .sub { font-size: 21pt; font-weight: 900; color: var(--blue); margin: 1mm 0 4mm; letter-spacing: -0.01em; }
+  .dashes { display: flex; justify-content: center; gap: 2.5mm; margin: 4mm 0 6mm; }
+  .dashes i { display: block; width: 9mm; height: 1.4mm; border-radius: 1mm; }
+  .cover .tagline { font-size: 12pt; color: #374151; }
+  .toc { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; margin-top: 12mm; text-align: left; padding: 0 12mm; }
+  .toc h3 { font-size: 7.5pt; letter-spacing: 0.22em; text-transform: uppercase; color: var(--blue); margin: 0 0 2.5mm; }
+  .toc ol { list-style: none; margin: 0; padding: 0; }
+  .toc li { display: grid; grid-template-columns: 7mm 1fr; font-size: 9.5pt; margin-bottom: 1.6mm; }
+  .toc li span { color: var(--faint); }
+  .hero { display: flex; justify-content: center; align-items: center; gap: 9mm; margin-top: 10mm; }
+  .hero .phone { width: 46mm; height: 88mm; }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<section class="page cover">
+  <div class="brand">STEP NETWORK<small>SDK DOCUMENTATION &amp; GUIDE</small></div>
+  <h1>WebAdView SDK</h1>
+  <div class="sub">How it works &amp; how to use it</div>
+  <div class="dashes"><i style="background:var(--purple)"></i><i style="background:var(--blue)"></i><i style="background:var(--orange)"></i><i style="background:var(--green)"></i></div>
+  <div class="tagline">What it does, how it works, and how to get started —<br>for native iOS apps and Flutter apps on iOS and Android.</div>
+
+  <div class="hero">
+    <div class="pw" style="margin-bottom:8mm">
+    <div class="phone">
+      <div class="ln w80"></div><div class="ln w60"></div><div class="ln w80"></div><div class="ln w45"></div><div class="ln w80"></div><div class="ln w60"></div><div class="ln w80"></div><div class="ln w45"></div><div class="ln w80"></div><div class="ln w60"></div>
+      <div class="annonce" style="position:absolute; left:0; right:0; bottom:27.5mm">ANNONCE</div>
+      <div class="ad slice" style="left:3.5mm; right:3.5mm; height:26mm">AD CREATIVE<small>77% on screen</small></div>
+    </div>
+    <div class="below" style="left:3.5mm; right:3.5mm; height:8mm">23% of the ad — below the screen</div>
+    </div>
+    <div style="width:56mm; text-align:left">
+      <div class="card tone-green"><h4 class="c-green">Measured honestly</h4><p>Google sees the real 77%</p></div>
+      <div class="card tone-orange"><h4 class="c-orange">● 77% visible — the clock is running</h4><p>seen for 0.42 s of the 1 s required to count</p></div>
+      <div class="card tone-purple"><h4 class="c-purple">One integration, two platforms</h4><p>native Swift on iOS, a Kotlin port on Android — same rules, same results</p></div>
+    </div>
+  </div>
+
+  <div class="toc">
+    <div><h3>The SDK, simply</h3><ol>
+      <li><span>1</span>What is WebAdView?</li><li><span>2</span>How it works</li><li><span>3</span>An ad's journey</li>
+      <li><span>4</span>Consent, simply</li><li><span>5</span>Loading, tuned by STEP Network</li><li><span>6</span>Measured honestly</li><li><span>6</span>The resizing, up close</li></ol></div>
+    <div><h3>Implementation guide</h3><ol>
+      <li><span>7</span>Install &amp; initialize — native iOS</li><li><span>8</span>Install &amp; initialize — Flutter</li><li><span>9</span>Adding ads to your app</li>
+      <li><span>10</span>Using your own consent platform</li><li><span>11</span>Debugging</li></ol></div>
+  </div>
+  <div class="ftr"><span>WebAdView SDK · iOS 16+ · Android 7+ · Flutter 3.44+</span><span></span></div>
+</section>
+
+<!-- ============ 1 WHAT IS ============ -->
+<section class="page">
+  <div class="hdr"><span>WebAdView SDK · Documentation &amp; guide</span><span>1</span></div>
+  <h1>What is WebAdView?</h1>
+  <p class="lead">WebAdView is STEP Network's ad component for apps. A developer places an ad spot in the app the same way they place a picture or a text block — <strong>the SDK takes care of everything else</strong>.</p>
+  <p class="lead">The ads are served by the same ad technology STEP Network uses on the web. That is the core idea: because the ads are web ads, STEP Network can manage sizes, formats, demand and settings <strong>remotely</strong> — things can be adjusted for a publisher without the app being updated.</p>
+
+  <h2>The SDK takes care of three things</h2>
+  <div class="cols3">
+    <div style="text-align:center">
+      <div class="pw" style="margin-bottom:8mm"><div class="phone sm" style="height:43mm">
+        <div class="ln w80"></div><div class="ln w60"></div>
+        <div class="consent-box" style="margin-top:4mm">We care about<br>your privacy<span class="btn acc">Accept</span><span class="btn dec">Decline</span></div>
+      </div></div>
+      <div class="cap"><b class="c-purple">1 · Consent first</b><br>No ad loads before the user has answered the consent notice — the SDK's own box, or the one the app already has (section 4).</div>
+    </div>
+    <div style="text-align:center">
+      <div class="pw" style="margin-bottom:8mm"><div class="phone sm" style="height:43mm">
+        <div class="ln w80"></div><div class="ln w60"></div><div class="ln w80"></div><div class="ln w45"></div><div class="ln w80"></div><div class="ln w60"></div><div class="ln w80"></div>
+        <div class="ad slice" style="left:2.6mm; right:2.6mm; height:2mm"></div>
+      </div><div class="below" style="left:2.6mm; right:2.6mm; height:8mm; color:var(--blue); border-color:var(--blue-line); background:var(--blue-bg)">AD<br>loading — just below the screen</div></div>
+      <div class="cap"><b class="c-blue">2 · The right moment</b><br>Ads load just below the screen as the user scrolls — ready to appear instantly, nothing wasted (section 5).</div>
+    </div>
+    <div style="text-align:center">
+      <div class="pw" style="margin-bottom:8mm"><div class="phone sm" style="height:43mm">
+        <div class="ln w80"></div>
+        <div class="ad green" style="height:20mm; margin-top:3mm; position:relative">AD</div>
+        <div class="check" style="right:3mm; top:21mm">✓</div>
+      </div></div>
+      <div class="cap"><b class="c-green">3 · Really seen</b><br>The SDK measures whether the ad was truly on screen — and makes Google's reports show the same truth (section 6).</div>
+    </div>
+  </div>
+
+  <h2 style="margin-top:5mm">Which integration is for you</h2>
+  <div class="platform-row">
+    <div class="card tone-blue"><h4><span class="tag ios">iOS</span>Native iOS app</h4><p>SwiftUI or UIKit, iOS 16 or newer. Add the Swift Package (section 7).</p></div>
+    <div class="card tone-purple"><h4><span class="tag flutter">Flutter</span>Flutter app</h4><p>One Dart integration covers iOS 16+ and Android 7+ (section 8). Underneath, the plugin runs the native SDK on iOS and a Kotlin port of it on Android.</p></div>
+    <div class="card tone-grey"><h4><span class="tag android">Android</span>Native Android app</h4><p>Not offered as a standalone library yet — the Kotlin code ships inside the Flutter plugin. Talk to STEP Network.</p></div>
+  </div>
+
+  <h2 style="margin-top:4mm">What a publisher needs</h2>
+  <div class="needs">
+    <div><b class="n">1</b><span><strong>An app</strong> — native iOS (SwiftUI/UIKit, iOS 16+) or Flutter 3.44+ targeting iOS 16+ and Android 7+</span></div>
+    <div><b class="n">2</b><span><strong>Ad unit IDs</strong> — one per ad placement, from the STEP Network onboarding</span></div>
+    <div><b class="n">3</b><span><strong>A consent key</strong> — unless the app already has its own consent platform (section 4)</span></div>
+    <div><b class="n">4</b><span><strong>An ad template</strong> — an HTML template page hosted on the publisher's own domain; the ads render inside it, and the SDK is given its URL</span></div>
+  </div>
+  <p style="margin-top:3mm"><strong>And it's light.</strong> Ads only load when the user scrolls near them, so the SDK costs nothing while no ad is on screen. On iOS it adds about 8 MB to the app.</p>
+  <div class="ftr"><span>WebAdView SDK — documentation &amp; guide</span><span>1 · What is WebAdView?</span></div>
+</section>
+
+<!-- ============ 2 HOW IT WORKS ============ -->
+<section class="page">
+  <div class="hdr"><span>WebAdView SDK · Documentation &amp; guide</span><span>2</span></div>
+  <h1>How it works</h1>
+  <p class="lead">Every ad lives in a small web view — a tiny browser window inside the app. Four layers work together, and each one has a single job.</p>
+
+  <div style="padding:0 8mm">
+    <div class="card tone-purple"><h4>The app</h4><p>Decides <strong>where</strong> ads appear in the layout, and which placements to use — nothing more.</p></div>
+    <div class="arrow-down">↓</div>
+    <div class="card tone-blue"><h4>The SDK</h4><p>Handles the rest automatically: waits for consent, loads ads at the right moment, measures whether they are really seen, and opens ad clicks in the browser.</p></div>
+    <div class="arrow-down">↓</div>
+    <div class="card tone-orange"><h4>The ad page</h4><p>A small web page, hosted on the publisher's own website, where the ad is requested and rendered — by the same ad technology STEP Network uses on the web (Yield Manager and Google's ad system).</p></div>
+    <div class="arrow-down">↓</div>
+    <div class="card tone-grey"><h4>STEP Network &amp; Google</h4><p>Everything about the ads themselves — sizes, formats, demand, loading distances — is decided here, remotely. STEP Network can adjust it for any publisher without an app update.</p></div>
+  </div>
+
+  <h2>Three rules the SDK never breaks</h2>
+  <p><strong class="c-blue">Consent first.</strong> Nothing loads before the user has answered the consent notice — and the consent box never appears inside an ad.</p>
+  <p><strong class="c-blue">Load late.</strong> Ads load near the screen, not three screens below it — no wasted requests, no slow feeds.</p>
+  <p><strong class="c-green">Measure honestly.</strong> Google is shown only the part of the ad that is really on screen, so the reports reflect reality — not an automatic “100% visible”.</p>
+
+  <h2>One SDK, two platforms</h2>
+  <div class="cols">
+    <div class="card tone-blue"><h4><span class="tag ios">iOS</span>The native Swift SDK</h4><p>Used directly by native iOS apps, and underneath the Flutter plugin on iOS. Ads render in Apple's WKWebView; consent runs through Didomi's iOS SDK.</p></div>
+    <div class="card tone-green"><h4><span class="tag android">Android</span>A Kotlin port of the same SDK</h4><p>Used by the Flutter plugin on Android. Ads render in Android's WebView; consent runs through Didomi's Android SDK. Same loading rules, same measurement rules, same log lines.</p></div>
+  </div>
+  <p class="small">The two are kept in step by one written contract for the ad page, the same ad template, and the same end-to-end test on both platforms. A publisher's Flutter app never sees the difference.</p>
+  <div class="ftr"><span>WebAdView SDK — documentation &amp; guide</span><span>2 · How it works</span></div>
+</section>
+
+<!-- ============ 3 AN AD'S JOURNEY ============ -->
+<section class="page">
+  <div class="hdr"><span>WebAdView SDK · Documentation &amp; guide</span><span>3</span></div>
+  <h1>An ad's journey</h1>
+  <p class="lead">From an empty spot in the layout to a counted, viewable ad — in five steps.</p>
+
+  <div class="flow" style="justify-content:center; margin:5mm 0 6mm">
+    <div style="text-align:center"><div class="pw" style="margin-bottom:7mm"><div class="phone xs"><div class="ln w80"></div><div class="ln w60"></div><div class="ad empty" style="height:11mm; margin-top:4mm; font-size:5pt">(empty spot)</div><div class="ln w80" style="margin-top:2mm"></div></div></div><div class="cap">The empty spot</div></div>
+    <div class="arr">→</div>
+    <div style="text-align:center"><div class="pw" style="margin-bottom:7mm"><div class="phone xs"><div class="ln w80"></div><div class="consent-box" style="margin-top:3mm">Consent?<span class="btn acc">Accept</span><span class="btn dec">Decline</span></div></div></div><div class="cap c-purple">Consent checked</div></div>
+    <div class="arr">→</div>
+    <div style="text-align:center"><div class="pw" style="margin-bottom:7mm"><div class="phone xs"><div class="ln w80"></div><div class="ln w60"></div><div class="ln w80"></div><div class="ln w45"></div><div class="ln w80"></div><div class="ln w60"></div><div class="ad slice" style="left:2mm; right:2mm; height:1.5mm"></div></div><div class="below" style="left:2mm; right:2mm; height:7mm; color:var(--blue); border-color:var(--blue-line); background:var(--blue-bg); font-size:5pt">AD · loading…</div></div><div class="cap c-blue">Loads just below</div></div>
+    <div class="arr">→</div>
+    <div style="text-align:center"><div class="pw" style="margin-bottom:7mm"><div class="phone xs"><div class="ln w80"></div><div class="ad" style="height:14mm; margin-top:2mm">AD</div><div class="card tone-orange" style="padding:0.6mm 1mm; margin:1.5mm 0 0; font-size:5pt; text-align:center; color:var(--orange)">⏱ ≥50% · 1 s</div></div></div><div class="cap c-orange">Really seen?</div></div>
+    <div class="arr">→</div>
+    <div style="text-align:center"><div class="pw" style="margin-bottom:7mm"><div class="phone xs" style="position:relative"><div class="ln w80"></div><div class="ad green" style="height:14mm; margin-top:2mm">AD</div><div class="check" style="right:2mm; top:14mm; width:4.5mm; height:4.5mm; font-size:6pt">✓</div><div style="font-size:4.5pt; color:var(--faint); text-align:center; margin-top:1.5mm">→ Google's reports</div></div></div><div class="cap c-green">Counted</div></div>
+  </div>
+
+  <ul class="steps">
+    <li><span class="num" style="background:var(--purple)">1–2</span><div><h4>An empty spot — until consent is answered</h4><p>The placement starts as a quiet placeholder. Has the user answered the consent notice? If not, the ad simply waits — nothing is requested, nothing is sent. The moment an answer exists, waiting ads continue by themselves (section 4).</p></div></li>
+    <li><span class="num" style="background:var(--blue)">3</span><div><h4>It loads quietly as the user scrolls closer</h4><p>Typically about 1½ screens away the ad page starts loading in the background, and about one screen away the ad is requested and rendered — the exact distances are set per publisher by STEP Network (section 5). The spot smoothly takes the size of the ad that arrived.</p></div></li>
+    <li><span class="num" style="background:var(--orange)">4</span><div><h4>The SDK checks that it is really seen</h4><p>Viewable = at least half the ad on screen for one full second, uninterrupted — the official industry standard. Scrolling away too soon, or leaving the app, restarts the clock (section 6).</p></div></li>
+    <li><span class="num" style="background:var(--green)">5</span><div><h4>Google counts it</h4><p>Google runs the same check with its own measurement — which the SDK has made honest — and the viewable impression lands in Google Ad Manager's reports (section 6).</p></div></li>
+  </ul>
+
+  <div class="cols" style="margin-top:2mm">
+    <div class="callout orange" style="margin:0"><strong>What if the user never scrolls down?</strong> Then the ad is never requested at all — no wasted impressions, and no money spent on ads nobody could have seen.</div>
+    <div class="callout" style="margin:0"><strong>What if the user changes their consent later?</strong> Ads already on screen notice by themselves and reload with the new answer. The app doesn't have to do anything.</div>
+  </div>
+  <div class="ftr"><span>WebAdView SDK — documentation &amp; guide</span><span>3 · An ad's journey</span></div>
+</section>
+
+<!-- ============ 4 CONSENT ============ -->
+<section class="page">
+  <div class="hdr"><span>WebAdView SDK · Documentation &amp; guide</span><span>4</span></div>
+  <h1>Consent, simply</h1>
+  <p class="lead">One rule: <strong>no ad loads before the user has answered the consent notice.</strong> Both answers open the gate — what's flexible is where the answer comes from.</p>
+
+  <div style="width:70mm; margin:4mm auto 0" class="consent-box"><span style="font-size:8pt">“We care about your privacy…”</span><div style="display:flex; gap:2mm; justify-content:center; margin-top:1.5mm"><span class="btn acc" style="width:18mm; margin:0; font-size:7pt">Accept</span><span class="btn dec" style="width:18mm; margin:0; font-size:7pt">Decline</span></div></div>
+  <div style="display:flex; justify-content:center; gap:26mm; color:var(--faint); font-size:12pt; line-height:1; margin:1.5mm 0">↓ ↓ ↓</div>
+  <div class="cols3" style="padding:0 14mm">
+    <div class="card tone-green" style="text-align:center; margin:0"><h4 class="c-green">Accepts</h4><p>personalized ads</p></div>
+    <div class="card tone-orange" style="text-align:center; margin:0"><h4 class="c-orange">Declines</h4><p>limited, non-personalized ads</p></div>
+    <div class="card tone-grey" style="text-align:center; margin:0"><h4>No answer yet</h4><p>nothing loads — ads wait</p></div>
+  </div>
+
+  <h2>Where the answer can come from — the three modes</h2>
+  <div class="cols3">
+    <div class="card" style="border-top:3px solid var(--purple)"><h4>1 · The SDK brings the consent box</h4><p>For apps that don't have one. The SDK shows the notice (Didomi — the platform STEP Network uses), remembers the answer, and passes it to every ad. The app just provides its key. On Android the same Didomi notice is shown by Didomi's Android SDK.</p></div>
+    <div class="card" style="border-top:3px solid var(--blue)"><h4>2 · The app already runs Didomi</h4><p>The app uses Didomi itself. The SDK shows no second consent box — it asks the app's Didomi directly “has the user answered yet?”, so ads can never start before the notice is answered (setup in section 10).</p></div>
+    <div class="card" style="border-top:3px solid var(--green)"><h4>3 · The app uses another consent system</h4><p>Any other standard (TCF) consent platform keeps working exactly as today — the SDK shows nothing and just reads its answer, from the standard place the platform stores it on each OS (setup in section 10). <em>Verified so far with Cookiebot in the iOS simulator and with a simulated TCF platform on iOS and Android — see section 10.</em></p></div>
+  </div>
+
+  <h2>Good to know</h2>
+  <p><strong>The consent box never appears inside an ad.</strong> The answer is collected once, in the app, and handed to every ad page invisibly.</p>
+  <p><strong>Changing your mind works instantly.</strong> If the user opens privacy settings and changes their answer, waiting ads load and ads already on screen reload themselves — automatically.</p>
+  <p><strong>Consent is checked in two independent places.</strong> First, the SDK never even starts loading an ad before the user has answered. Second, the ad technology inside the ad page (Yield Manager and Google's ad system) checks the answer again by itself — exactly as it does on normal websites. If one of the two checks ever failed, the other would still protect the user.</p>
+  <div class="ftr"><span>WebAdView SDK — documentation &amp; guide</span><span>4 · Consent, simply</span></div>
+</section>
+
+<!-- ============ 5 LOADING ============ -->
+<section class="page">
+  <div class="hdr"><span>WebAdView SDK · Documentation &amp; guide</span><span>5</span></div>
+  <h1>Loading, tuned by STEP Network</h1>
+  <p class="lead">Ads load in two steps as the user scrolls toward them — and how early each step happens is a dial STEP Network controls remotely, per publisher.</p>
+
+  <div class="cols col-wide">
+    <div>
+      <div class="card tone-grey" style="padding:4mm">
+        <div class="card tone-orange" style="border-style:dashed; text-align:center; margin-bottom:0"><h4 class="c-orange">≈ 1½ screens ahead</h4><p>the ad page starts loading, quietly</p></div>
+        <div class="arrow-down" style="color:var(--orange)">↓</div>
+        <div class="card tone-orange" style="border-style:dashed; text-align:center; margin-bottom:0"><h4 class="c-orange">≈ 1 screen ahead</h4><p>the ad is requested and rendered</p></div>
+        <div class="arrow-down" style="color:var(--orange)">↓</div>
+        <div class="card" style="border:1.5px solid #111; text-align:center; margin:0; padding:3mm"><h4 style="font-size:8pt; letter-spacing:0.15em">VISIBLE SCREEN</h4><div class="ad green" style="height:12mm; margin-top:2mm">Ad on screen<small>already loaded — appears instantly</small></div></div>
+      </div>
+    </div>
+    <div>
+      <p><strong>Why two steps?</strong> Loading early means the ad is warm and ready — it appears with no visible loading. Showing it late means the impression happens where the user is actually looking — better viewability, and no requests for ads nobody scrolls to.</p>
+      <p><strong>The distances come from STEP Network — as percentages of the screen.</strong> Each publisher gets its own values, for example <code>fetch: 150</code> and <code>render: 100</code>. The SDK measures the user's actual screen and converts: on a screen 800 points tall, 150% becomes 1,200 points — that is the “1.5 screens”. Percentages give the same experience on every device, big or small. They can be adjusted live at any time — <strong>no app update needed</strong> — and the app remembers them between launches.</p>
+      <p><strong>The numbers in the app are only a starting point.</strong> Whatever a developer might set in code, STEP Network's remote values always take over. That keeps the tuning in one place, for every publisher — on iOS and Android alike.</p>
+    </div>
+  </div>
+
+  <h2>Which ads are loaded — and which can count</h2>
+  <div class="cols col-wide">
+    <div class="card tone-grey" style="padding:3mm; position:relative; align-self:start">
+      <div class="ln w80"></div>
+      <div class="ad green" style="height:8mm">AD 1 · showing</div>
+      <div class="ln w80" style="margin-top:2mm"></div>
+      <div class="cut" style="top:22mm"><span>bottom of screen</span></div>
+      <div class="ln w60" style="margin-top:3mm"></div>
+      <div class="ad" style="height:8mm">AD 2 · loaded, ready</div>
+      <div class="ln w80" style="margin-top:2mm"></div>
+      <div class="ad orange" style="height:8mm">AD 3 · warming up</div>
+      <div class="ln w80" style="margin-top:2mm"></div>
+      <div class="ad empty" style="height:8mm">AD 4 · empty</div>
+    </div>
+    <div style="font-size:9pt">
+      <p><strong class="c-green">● On screen — showing and being measured.</strong> Only here can the ad become a viewable impression: at least half visible, for one second (section 6).</p>
+      <p><strong class="c-blue">● Just below — the ad is there, ready to appear instantly.</strong> But off screen its window is a 1-point sliver, so it measures as not visible — <strong>it cannot count as viewable down here</strong>.</p>
+      <p><strong class="c-orange">● Further down — only warming up.</strong> The ad page is loading quietly in the background; <strong>no ad has been requested yet</strong>.</p>
+      <p><strong style="color:var(--faint)">● Far away — nothing at all.</strong> Not loaded, not requested, not counted. If the user never scrolls here, this ad never happens.</p>
+      <p>So an ad can never rack up impressions just by existing in the layout — it isn't requested until the user scrolls toward it, and it can only <em>count</em> while actually on screen. <strong>And refreshing?</strong> The SDK never swaps an ad on a timer; interval refresh is a Yield Manager feature STEP Network configures remotely, inside the ad page.</p>
+    </div>
+  </div>
+  <div class="ftr"><span>WebAdView SDK — documentation &amp; guide</span><span>5 · Loading</span></div>
+</section>
+
+<!-- ============ 6 MEASURED HONESTLY ============ -->
+<section class="page">
+  <div class="hdr"><span>WebAdView SDK · Documentation &amp; guide</span><span>6</span></div>
+  <h1>Measured honestly</h1>
+  <p class="lead">An ad counts as <strong>viewable</strong> when it meets the official industry standard (IAB/MRC) — the one advertisers audit against. The SDK makes sure that standard is applied truthfully in an app.</p>
+
+  <div class="flow" style="justify-content:center; padding:0 20mm; margin:3mm 0 5mm">
+    <div class="card tone-blue" style="text-align:center"><div class="ad" style="height:8mm; width:18mm; margin:0 auto 1.5mm; position:relative; overflow:hidden"><div style="position:absolute; left:0; right:0; top:0; height:50%; background:var(--blue-line)"></div></div><h4 class="c-blue">≥ 50% on screen</h4></div>
+    <div class="arr">+</div>
+    <div class="card tone-orange" style="text-align:center"><div style="font-size:12pt; line-height:1; margin-bottom:1.5mm">⏱</div><h4 class="c-orange">1 second, uninterrupted</h4></div>
+    <div class="arr">=</div>
+    <div class="card tone-green" style="text-align:center"><div style="font-size:12pt; line-height:1; margin-bottom:1.5mm; color:var(--green)">✓</div><h4 class="c-green">a viewable impression</h4></div>
+  </div>
+
+  <p><strong>Why this was a big issue.</strong> Every ad sits in its own little browser window, and Google measures from <em>inside</em> that window — it can only see the window, never the phone around it. The ad always fills its own window, so Google always said <strong>“100% visible”</strong>, no matter where the ad really was. Numbers nobody could trust.</p>
+
+  <div class="cols">
+    <div class="card" style="border-color:var(--red-line)"><h4 class="c-red">Without the SDK</h4>
+      <div style="display:flex; gap:3mm; align-items:flex-start; margin-top:1.5mm">
+        <div class="pw" style="flex:none; margin-bottom:9mm"><div class="phone xs" style="height:34mm"><div class="ln w80"></div><div class="ln w60"></div><div class="ln w80"></div><div class="ln w45"></div><div class="ln w80"></div><div class="ad slice" style="left:2mm; right:2mm; height:2.8mm"></div></div><div class="below" style="left:2mm; right:2mm; height:9mm">77% of the ad<br>below the screen</div></div>
+        <div style="flex:1"><p class="small" style="margin-bottom:1mm">what the ad's window shows:</p><div class="ad" style="height:12mm; background:var(--blue-line)">the ad — filling<br>the whole window</div><p style="margin-top:1.5mm"><strong class="c-red">✗ Measures “100% visible”</strong> — wherever the ad really is</p></div>
+      </div></div>
+    <div class="card" style="border-color:var(--green-line)"><h4 class="c-green">With the SDK</h4>
+      <div style="display:flex; gap:3mm; align-items:flex-start; margin-top:1.5mm">
+        <div class="pw" style="flex:none; margin-bottom:9mm"><div class="phone xs" style="height:34mm"><div class="ln w80"></div><div class="ln w60"></div><div class="ln w80"></div><div class="ln w45"></div><div class="ln w80"></div><div class="ad slice" style="left:2mm; right:2mm; height:2.8mm"></div></div><div class="below" style="left:2mm; right:2mm; height:9mm">77% of the ad<br>below the screen</div></div>
+        <div style="flex:1"><p class="small" style="margin-bottom:1mm">what the ad's window shows:</p><div class="ad green" style="height:4.5mm; border-width:1.5px">only the visible slice</div><div class="ad dim" style="height:7mm; margin-top:1mm; font-size:5.5pt">rest of the ad — outside the window</div><p style="margin-top:1.5mm"><strong class="c-green">✓ Measures the truth</strong> — e.g. 23% visible</p></div>
+      </div></div>
+  </div>
+
+  <h2>How the SDK does it — step by step</h2>
+  <ul class="steps">
+    <li><span class="num" style="background:var(--blue)">1</span><div><h4>It always knows what's visible.</h4><p>The SDK tracks the ad's position natively, continuously — at every moment it knows exactly which part of the ad is on screen.</p></div></li>
+    <li><span class="num" style="background:var(--blue)">2</span><div><h4>It makes the ad's window match.</h4><p>The window becomes exactly as big as the visible part of the ad — the part below the screen simply has no window anymore. For the user, the ad looks exactly the same.</p></div></li>
+    <li><span class="num" style="background:var(--blue)">3</span><div><h4>Google now measures the truth.</h4><p>Its code still just measures the window — but the window now equals what is really on screen, so “% visible” and viewable impressions become real.</p></div></li>
+    <li><span class="num" style="background:var(--blue)">4</span><div><h4>And it never disturbs anything.</h4><p>The resizing only begins once the ad is actually showing, and the ad's spot in the app keeps its size the whole time — the user never sees flickering or jumping content. Identical on iOS and Android.</p></div></li>
+  </ul>
+  <div class="callout grey"><strong>One ad counts once.</strong> A served ad can become viewable at most once — if the user scrolls away and back to the <em>same</em> ad, it is not counted again (that would inflate the numbers). The spot earns a new viewable impression in Google's reports only when a <em>new</em> ad is served in it — for example a rebuilt list row, or an ad refresh configured remotely by STEP Network.</div>
+  <div class="ftr"><span>WebAdView SDK — documentation &amp; guide</span><span>6 · Measured honestly — continued overleaf</span></div>
+</section>
+
+<!-- ============ 6b RESIZING UP CLOSE ============ -->
+<section class="page">
+  <div class="hdr"><span>WebAdView SDK · Documentation &amp; guide</span><span>6</span></div>
+  <h1>The resizing, up close</h1>
+  <p class="lead">The same moment, seen from two sides: what the user sees on the phone — and what the SDK has actually built inside the ad's spot.</p>
+
+  <div style="display:grid; grid-template-columns:40mm 1fr; gap:8mm; margin-top:2mm">
+    <div>
+      <h2 style="margin-top:0">What the user sees</h2>
+      <div class="pw" style="margin-bottom:8mm"><div class="phone sm"><div class="ln w80"></div><div class="ln w60"></div><div class="ln w80"></div><div class="ln w45"></div><div class="ln w80"></div><div class="ad slice" style="left:2.6mm; right:2.6mm; height:13mm">AD<small>looks completely normal</small></div></div><div class="below" style="left:2.6mm; right:2.6mm; height:8mm">rest of the ad — below the screen</div></div>
+      <div class="cap">The ad simply sticks out below the screen — nothing looks special.</div>
+    </div>
+    <div>
+      <h2 style="margin-top:0">What the SDK has actually built there</h2>
+      <div style="display:grid; grid-template-columns:1fr 46mm; gap:4mm">
+        <div>
+          <div class="ad" style="height:24mm; border-width:1.5px">AD — top part<small>shown inside the window</small></div>
+          <div class="ad dim" style="height:16mm; margin-top:2mm; font-size:6.5pt">rest of the ad — no window here,<br>nothing is shown or measured</div>
+        </div>
+        <div style="font-size:8.5pt">
+          <p style="margin-bottom:2mm"><strong class="c-blue">The ad's window (webview)</strong><br>resized to exactly the visible part — this is all Google's measurement can see</p>
+          <p style="margin-bottom:2mm"><strong>The page inside is shifted</strong><br>by the same amount the window shrank — so the ad's pixels stay exactly in place on screen</p>
+          <p style="margin-bottom:0"><strong>The ad's spot (dashed)</strong><br>keeps its full size in the layout — that's why nothing ever jumps or shifts for the user</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2>As the user scrolls, the window follows — updated continuously</h2>
+  <div class="flow" style="padding:0 6mm">
+    <div style="flex:1; text-align:center"><div class="ad dim" style="height:16mm; width:26mm; margin:0 auto; position:relative; overflow:hidden"><div style="position:absolute; inset:0; border:1.5px solid var(--blue); background:var(--blue-bg)"></div></div><div class="cap"><b>fully visible</b><br>window = the whole ad</div></div>
+    <div class="arr">→</div>
+    <div style="flex:1; text-align:center"><div class="ad dim" style="height:16mm; width:26mm; margin:0 auto; position:relative; overflow:hidden"><div style="position:absolute; left:0; right:0; top:0; height:70%; border:1.5px solid var(--blue); background:var(--blue-bg)"></div></div><div class="cap"><b>70% visible</b><br>window = 70% of the ad</div></div>
+    <div class="arr">→</div>
+    <div style="flex:1; text-align:center"><div class="ad dim" style="height:16mm; width:26mm; margin:0 auto; position:relative; overflow:hidden"><div style="position:absolute; left:0; right:0; top:0; height:30%; border:1.5px solid var(--blue); background:var(--blue-bg)"></div></div><div class="cap"><b>30% visible</b><br>window = 30% of the ad</div></div>
+    <div class="arr">→</div>
+    <div style="flex:1; text-align:center"><div class="ad dim" style="height:16mm; width:26mm; margin:0 auto; position:relative; overflow:hidden"><div style="position:absolute; left:0; right:0; top:0; height:1px; background:var(--blue)"></div></div><div class="cap"><b>fully hidden</b><br>a 1-point sliver stays — keeps the page awake</div></div>
+  </div>
+  <p class="small" style="margin-top:2mm">The window is never resized before the ad has rendered — an ad is never requested into a collapsed window. On Android the page's zoom level is locked as well, so the creative always renders at its true size while the window changes.</p>
+
+  <h2>How does Google get the numbers?</h2>
+  <div class="flow">
+    <div class="card tone-blue"><h4 class="c-blue">1 · Google's code measures</h4><p>inside the ad's window — which the SDK has made truthful</p></div>
+    <div class="arr">→</div>
+    <div class="card tone-orange"><h4 class="c-orange">2 · The ad page sends the result to Google's servers</h4><p>Google's own reporting, sent from inside the page — exactly as on any website</p></div>
+    <div class="arr">→</div>
+    <div class="card tone-green"><h4 class="c-green">3 · It appears in Google Ad Manager</h4><p>viewable impressions · % viewable — now reflecting reality</p></div>
+  </div>
+  <p style="margin-top:3mm">The SDK is never part of this chain — it cannot send or change numbers (nobody can; Google only trusts its own measurement). It only fixes what Google's code <em>sees</em> in step 1. And that is why the 1-point sliver matters: if the window disappeared completely, the phone would put the ad's page to sleep to save battery — and a sleeping page can't send its results to Google. The sliver keeps it awake.</p>
+  <div class="ftr"><span>WebAdView SDK — documentation &amp; guide</span><span>6 · Measured honestly — continued</span></div>
+</section>
+
+<!-- ============ 7 INSTALL — NATIVE iOS ============ -->
+<section class="page">
+  <div class="hdr"><span>WebAdView SDK · Documentation &amp; guide</span><span>7</span></div>
+  <div class="kicker">Implementation guide · <span class="tag ios">iOS</span> native iOS app</div>
+  <h1>Install &amp; initialize — native iOS</h1>
+  <p class="lead">Two steps and the SDK is ready: add the package, then give it your publisher details — your consent key and your template link — once, at app launch. Everything on this page is copy-paste friendly. <em>Building with Flutter? Skip to section 8.</em></p>
+
+  <div class="cols col-wide">
+    <div>
+      <h2 style="margin-top:2mm"><span class="num" style="background:var(--blue); display:inline-flex; width:5mm; height:5mm; font-size:7pt; vertical-align:middle; margin-right:2mm">1</span>Add the package</h2>
+      <p>In your app project in Xcode: <strong>File → Add Package Dependencies…</strong>, paste the repository URL, and add the <strong>WebAdViewSDK</strong> product to your app target. Then <code>import WebAdViewSDK</code> — everything comes through that one module, and Didomi is pulled in automatically.</p>
+      <div class="callout orange"><strong>Use a standard App project.</strong> Swift Playgrounds (<code>.swiftpm</code>) projects cannot embed the Didomi framework — they may look fine in the simulator but crash on a real device.</div>
+      <h2><span class="num" style="background:var(--blue); display:inline-flex; width:5mm; height:5mm; font-size:7pt; vertical-align:middle; margin-right:2mm">2</span>Initialize at app launch</h2>
+      <p>Call <code>initialize(config:)</code> once, before any ad view exists. In a pure-SwiftUI app the simplest place is your <code>App</code> struct's <code>init()</code>; if you already have an AppDelegate, put the same call at the top of <code>didFinishLaunchingWithOptions</code>.</p>
+      <div class="callout"><strong>Both values come from your STEP Network onboarding.</strong> Treat the Didomi key as a secret — inject it from a build setting rather than committing it. The template URL is the address of your ad template — the HTML page hosted on your own domain (explained in section 2, <em>How it works</em>). If <code>initialize</code> is never called, ads simply stay blank — and the SDK prints a loud <code>[SN] [ERROR]</code> telling you why.</div>
+      <div class="callout purple"><strong>UIKit app?</strong> The same package works without SwiftUI: <code>WebAdScope</code> owns the loading and measurement for one scrolling screen, and <code>WebAdHostView</code> is the ad view you place in your layout. A complete example is in <strong>GUIDE.md</strong>, section 4b.</div>
+    </div>
+    <div>
+      <h2 style="margin-top:2mm">The code</h2>
+<pre><span class="c">// In your App struct — runs once at launch</span>
+<span class="k">import</span> SwiftUI
+<span class="k">import</span> WebAdViewSDK
+
+<span class="k">@main</span>
+<span class="k">struct</span> MyApp: App {
+    <span class="k">init</span>() {
+        WebAdViewSDK.initialize(config:
+WebAdViewSDKConfig(
+            didomiAPIKey: <span class="s">"&lt;YOUR-DIDOMI-API-KEY&gt;"</span>,
+            adTemplateURL: URL(string:
+                <span class="s">"&lt;YOUR-AD-TEMPLATE-URL&gt;"</span>)!
+        ))
+    }
+
+    <span class="k">var</span> body: <span class="k">some</span> Scene {
+        WindowGroup { ContentView() }
+    }
+}</pre>
+      <h2>Not using Didomi? (modes 2–3 in section 4)</h2>
+<pre><span class="c">// Your app has its own consent platform:</span>
+<span class="c">// a consentProvider replaces the Didomi key</span>
+WebAdViewSDK.initialize(config: WebAdViewSDKConfig(
+    consentProvider: TCFConsentProvider(),
+    adTemplateURL: URL(string:
+        <span class="s">"&lt;YOUR-AD-TEMPLATE-URL&gt;"</span>)!
+))
+
+<span class="c">// Is your own platform Didomi? Use this instead:</span>
+<span class="c">//   consentProvider: AppDidomiConsentProvider()</span></pre>
+      <p class="small">Everything else stays the same — details and the template requirement in section 10.</p>
+      <p class="small">No setup from STEP Network yet? Test ad units and the test template URL are listed in <strong>QUICKSTART.md</strong> in the repository (the test Didomi key is in the demo app), so development can start before the real setup exists.</p>
+    </div>
+  </div>
+  <div class="ftr"><span>WebAdView SDK — documentation &amp; guide</span><span>7 · Install &amp; initialize — native iOS</span></div>
+</section>
+
+<!-- ============ 8 INSTALL — FLUTTER ============ -->
+<section class="page">
+  <div class="hdr"><span>WebAdView SDK · Documentation &amp; guide</span><span>8</span></div>
+  <div class="kicker">Implementation guide · <span class="tag flutter">Flutter</span> iOS + Android</div>
+  <h1>Install &amp; initialize — Flutter</h1>
+  <p class="lead">One Dart package, <strong>webadview_flutter</strong>, gives a Flutter app STEP Network ads on iOS and Android. It runs the native SDK underneath, so everything in sections 1–6 applies unchanged on both platforms.</p>
+
+  <div class="cols col-wide">
+    <div>
+      <h2 style="margin-top:2mm"><span class="num" style="background:var(--purple); display:inline-flex; width:5mm; height:5mm; font-size:7pt; vertical-align:middle; margin-right:2mm">1</span>Add the package</h2>
+      <p>Add <code>webadview_flutter</code> to your <code>pubspec.yaml</code> as a Git dependency — STEP Network gives you the repository URL and version at onboarding; the plugin lives in the repository's <code>Flutter/webadview_flutter</code> folder. Flutter 3.44 or newer; iOS builds use Swift Package Manager only (CocoaPods is not supported).</p>
+      <div class="callout"><strong>iOS: deployment target 16.0.</strong> Open <code>ios/Runner.xcodeproj</code> and set <em>Minimum Deployments</em> to iOS 16 (the Flutter template defaults to 13). The plugin registers itself; nothing else changes in Xcode.</div>
+      <div class="callout green"><strong>Android: <code>MainActivity</code> must extend <code>FlutterFragmentActivity</code>.</strong> Didomi's consent notice needs a fragment host. Android 7 (API 24) or newer; Didomi for Android is pulled in automatically.</div>
+      <h2><span class="num" style="background:var(--purple); display:inline-flex; width:5mm; height:5mm; font-size:7pt; vertical-align:middle; margin-right:2mm">2</span>Initialize at app launch</h2>
+      <p>Call <code>WebAdViewSdk.initialize</code> once in <code>main()</code>, before <code>runApp</code>. The two values are the same as on native iOS: your Didomi key (inject it with <code>--dart-define</code>, never commit it) and your ad template URL. On web or desktop it logs once and ads render as an empty placeholder.</p>
+    </div>
+    <div>
+      <h2 style="margin-top:2mm">The code</h2>
+<pre style="font-size:7.2pt"><span class="c">// main.dart — runs once at launch</span>
+<span class="k">import</span> <span class="s">'package:webadview_flutter/webadview_flutter.dart'</span>;
+
+Future&lt;<span class="k">void</span>&gt; main() <span class="k">async</span> {
+  WidgetsFlutterBinding.ensureInitialized();
+  <span class="k">await</span> WebAdViewSdk.initialize(
+    WebAdViewSdkConfig.didomi(
+      apiKey: <span class="k">const</span> String.fromEnvironment(
+          <span class="s">'SN_DIDOMI_API_KEY'</span>),
+      adTemplateUrl:
+          Uri.parse(<span class="s">'&lt;YOUR-AD-TEMPLATE-URL&gt;'</span>),
+    ),
+  );
+  runApp(<span class="k">const</span> MyApp());
+}</pre>
+      <h2>Android: the one-line activity change</h2>
+<pre><span class="c">// android/app/src/main/kotlin/…/MainActivity.kt</span>
+<span class="k">import</span> io.flutter.embedding.android
+        .FlutterFragmentActivity
+
+<span class="k">class</span> MainActivity : FlutterFragmentActivity()</pre>
+      <h2>Not using Didomi? (modes 2–3 in section 4)</h2>
+<pre><span class="c">// Any TCF-certified consent platform:</span>
+<span class="k">await</span> WebAdViewSdk.initialize(
+  WebAdViewSdkConfig.tcf(
+    adTemplateUrl:
+        Uri.parse(<span class="s">'&lt;YOUR-AD-TEMPLATE-URL&gt;'</span>),
+  ),
+);
+
+<span class="c">// Your app runs its own Didomi</span>
+<span class="c">// (e.g. the didomi_sdk plugin)? Use:</span>
+<span class="c">//   WebAdViewSdkConfig.appDidomi(...)</span></pre>
+      <p class="small">Details and the template requirement in section 10. Test ad units and template URL for development before onboarding: <strong>QUICKSTART.md</strong>; the test Didomi key is in the demo app.</p>
+    </div>
+  </div>
+  <div class="ftr"><span>WebAdView SDK — documentation &amp; guide</span><span>8 · Install &amp; initialize — Flutter</span></div>
+</section>
+
+<!-- ============ 9 ADDING ADS ============ -->
+<section class="page">
+  <div class="hdr"><span>WebAdView SDK · Documentation &amp; guide</span><span>9</span></div>
+  <h1>Adding ads to your app</h1>
+  <p class="lead">Three small additions to a screen you already have — that is the whole integration, on every platform.</p>
+
+  <div class="cols">
+    <div>
+      <h2 style="margin-top:2mm"><span class="tag ios">iOS</span> SwiftUI — in one of your existing screens</h2>
+<pre>ScrollView {
+  VStack(spacing: 24) {
+    <span class="c">// …your existing content…</span>
+
+    WebAdView(adUnitId: <span class="s">"div-gpt-ad-mobile_1"</span>)
+      .showAdLabel(<span class="k">true</span>, text: <span class="s">"annonce"</span>)
+      .frame(maxWidth: .infinity)
+
+    <span class="c">// …more of your content…</span>
+
+    WebAdView(adUnitId: <span class="s">"div-gpt-ad-mobile_2"</span>)
+      .showAdLabel(<span class="k">true</span>, text: <span class="s">"annonce"</span>)
+      .frame(maxWidth: .infinity)
+  }
+}
+.lazyLoadAd()                  <span class="w">// REQUIRED</span>
+.background(DidomiWrapper())   <span class="c">// consent box</span></pre>
+      <h2><span class="tag flutter">Flutter</span> Dart — the same screen</h2>
+<pre>LazyLoadAdScope(               <span class="w">// REQUIRED</span>
+  child: SingleChildScrollView(
+    child: Column(children: [
+      <span class="c">// …your existing content…</span>
+      <span class="k">const</span> WebAdView(
+        adUnitId: <span class="s">'div-gpt-ad-mobile_1'</span>,
+        showAdLabel: <span class="k">true</span>),
+      <span class="c">// …more of your content…</span>
+      <span class="k">const</span> WebAdView(
+        adUnitId: <span class="s">'div-gpt-ad-mobile_2'</span>,
+        showAdLabel: <span class="k">true</span>),
+    ]),
+  ),
+)</pre>
+      <p class="small">One more thing: the consent box only appears once, but users must be able to change their answer later. Add a “Privacy settings” button in your app's settings — calling <code>WebAdViewSDK.showConsentPreferences()</code> (Swift) or <code>WebAdViewSdk.showConsentPreferences</code> (Dart) reopens the consent choices. In mode 2 the same call opens your Didomi preferences; in mode 3 your own consent platform's settings screen does this job instead.</p>
+    </div>
+    <div>
+      <h2 style="margin-top:2mm">The three things to include</h2>
+      <div class="callout"><strong>A <code>WebAdView</code> per placement.</strong> Placed in your layout like any other view or widget — one per ad unit ID from your onboarding, with flexible width. It takes the size of the ad that arrives.</div>
+      <div class="callout orange"><strong><code>.lazyLoadAd()</code> / <code>LazyLoadAdScope</code> on the scroll container — required, not optional.</strong> It installs the loading and measurement machinery. Without it, ads stay blank forever. One per scrolling screen. Works with <code>ScrollView</code> and <code>List</code>, and with <code>SingleChildScrollView</code> and <code>ListView</code> alike; rows a list rebuilds as the user scrolls back and forth show a fresh ad each time they return — every ad still counts only while actually seen (section 6).</div>
+      <div class="callout purple"><strong><code>.background(DidomiWrapper())</code> once, anywhere in the hierarchy (SwiftUI only).</strong> It gives the consent box a place to appear. In Flutter the plugin presents the notice by itself. Only in mode 1 — apps with their own consent setup skip this (section 10).</div>
+      <h2>When you run your app</h2>
+      <div class="card tone-grey" style="margin-bottom:2mm"><h4><span class="num" style="background:var(--purple); display:inline-flex; width:4.5mm; height:4.5mm; font-size:7pt; vertical-align:middle; margin-right:2mm">1</span>The consent notice, on first launch</h4><p>until it's answered, no ad requests happen at all</p></div>
+      <div class="card tone-grey" style="margin-bottom:2mm"><h4><span class="num" style="background:var(--blue); display:inline-flex; width:4.5mm; height:4.5mm; font-size:7pt; vertical-align:middle; margin-right:2mm">2</span>Answer → the first ad loads</h4><p>within a couple of seconds</p></div>
+      <div class="card tone-grey" style="margin-bottom:2mm"><h4><span class="num" style="background:var(--orange); display:inline-flex; width:4.5mm; height:4.5mm; font-size:7pt; vertical-align:middle; margin-right:2mm">3</span>Scroll → further ads load near the screen</h4><p>and can only count as viewable while actually seen</p></div>
+      <div class="card tone-grey" style="margin-bottom:2mm"><h4><span class="num" style="background:var(--green); display:inline-flex; width:4.5mm; height:4.5mm; font-size:7pt; vertical-align:middle; margin-right:2mm">4</span>Tagged lines in the console</h4><p>with debug on (section 11): loading, consent and measurement, live</p></div>
+    </div>
+  </div>
+  <p class="small">Optional extras — custom targeting, sizing hints and viewability callbacks — are documented in <strong>GUIDE.md</strong> (native iOS) and the plugin's <strong>README.md</strong> (Flutter) in the repository.</p>
+  <div class="ftr"><span>WebAdView SDK — documentation &amp; guide</span><span>9 · Adding ads to your app</span></div>
+</section>
+
+<!-- ============ 10 OWN CONSENT PLATFORM ============ -->
+<section class="page">
+  <div class="hdr"><span>WebAdView SDK · Documentation &amp; guide</span><span>10</span></div>
+  <h1>Using your own consent platform</h1>
+  <p class="lead">Does your app already show its own consent box? Then the SDK must not show a second one — it reads your platform's answer instead, and your consent box keeps working exactly as today.</p>
+
+  <div class="cols col-wide">
+    <div>
+      <h2 style="margin-top:2mm">The only code change</h2>
+<pre><span class="c">// Swift (native iOS)</span>
+WebAdViewSDK.initialize(
+  config: WebAdViewSDKConfig(
+    consentProvider: TCFConsentProvider(),
+    adTemplateURL: URL(string:
+        <span class="s">"&lt;YOUR-AD-TEMPLATE-URL&gt;"</span>)!
+  )
+)</pre>
+<pre><span class="c">// Dart (Flutter, iOS + Android)</span>
+<span class="k">await</span> WebAdViewSdk.initialize(
+  WebAdViewSdkConfig.tcf(
+    adTemplateUrl:
+        Uri.parse(<span class="s">'&lt;YOUR-AD-TEMPLATE-URL&gt;'</span>),
+  ),
+);</pre>
+      <p>No Didomi key, and no <code>DidomiWrapper()</code> in your views — your platform owns the consent UI. Everything else from section 9 stays the same. The SDK reads the answer from the standard place a TCF platform stores it: <code>UserDefaults</code> on iOS, <code>SharedPreferences</code> on Android.</p>
+    </div>
+    <div>
+      <h2 style="margin-top:2mm">What changes — and what doesn't</h2>
+      <div class="card"><h4>Your consent box: unchanged</h4><p>your platform shows the notice and the preferences screen, exactly as today</p></div>
+      <div class="card"><h4>The gate: unchanged</h4><p>ads wait until your platform has an answer — and reload by themselves if the user changes it later (section 4)</p></div>
+      <div class="card"><h4>The ad template: one requirement</h4><p>the template page must contain <strong>no consent code of its own</strong> — tell STEP Network you use your own platform and they provide a matching template</p></div>
+      <div class="callout"><strong>Is your own platform Didomi? (mode 2)</strong> Use <code>consentProvider: AppDidomiConsentProvider()</code> in Swift, or <code>WebAdViewSdkConfig.appDidomi(...)</code> in Dart — the SDK then asks your Didomi directly whether the notice has been answered. Add Didomi through the same package source the SDK uses, so both share one copy.</div>
+    </div>
+  </div>
+
+  <h2>One check before launch</h2>
+  <div class="callout orange"><strong>Ads must wait for the notice.</strong> Some consent platforms write their consent value <em>before</em> the user has answered — then ads could start too early. The check: delete the app, reinstall, and don't touch the notice — <strong>no ads may load until you answer</strong>. If they do, your platform's dashboard has a setting to delay the consent value until the user has interacted. (Mode 2, app-owned Didomi, is immune — the SDK asks Didomi directly.)</div>
+  <div class="callout green"><strong>What has been verified so far:</strong> Cookiebot (Usercentrics, TCF 2.2) in the iOS simulator; and, on both iOS and Android, a simulated TCF platform plus the app-owned Didomi variant — each proving that ads wait for the answer, load on it and reload when it changes. Other platforms use the same mechanism but haven't been tested yet — every publisher's setup is validated together with STEP Network before launch.</div>
+  <div class="ftr"><span>WebAdView SDK — documentation &amp; guide</span><span>10 · Your own consent platform</span></div>
+</section>
+
+<!-- ============ 11 DEBUGGING ============ -->
+<section class="page">
+  <div class="hdr"><span>WebAdView SDK · Documentation &amp; guide</span><span>11</span></div>
+  <div class="kicker">Implementation guide</div>
+  <h1>Debugging</h1>
+  <p class="lead">One switch turns on readable console logs, so you can watch loading, consent and measurement happen live. It's off by default — release builds stay clean automatically.</p>
+
+  <div class="cols">
+    <div>
+      <h2 style="margin-top:2mm"><span class="tag ios">iOS</span> native</h2>
+<pre>DebugSettings.shared.isDebugEnabled = <span class="k">true</span></pre>
+      <p class="small">Then watch Xcode's console, or from a terminal:</p>
+<pre>xcrun simctl launch --console-pty \
+    booted &lt;bundle-id&gt; | grep '\[SN\]'</pre>
+    </div>
+    <div>
+      <h2 style="margin-top:2mm"><span class="tag flutter">Flutter</span> iOS + Android</h2>
+<pre><span class="k">await</span> WebAdViewSdk.setDebugEnabled(<span class="k">true</span>);</pre>
+      <p class="small">iOS: same console command as on the left. Android (the Dart-side <code>[SN] [FLUTTER]</code> lines appear under logcat's <code>flutter</code> tag — drop <code>-s SN</code> and grep <code>'\[SN\]'</code> to see everything):</p>
+<pre>adb logcat -s SN | grep VIEWABILITY</pre>
+    </div>
+  </div>
+  <p>Set it anywhere — it works immediately, no rebuild needed, and it is remembered between launches. The demo apps' ladybug button is exactly this switch.</p>
+
+  <h2>How to read the log tags</h2>
+  <p><code>[SN] [LLM]</code> — loading: each ad's state changes as the user scrolls (<code>notLoaded</code> → <code>fetched</code> → <code>displayed</code>).</p>
+  <p><code>[SN] [VIEWABILITY]</code> — measurement: % visible and the timer, ending in <strong class="c-green">✅ VIEWABLE</strong> when an impression counts; <code>[ACTIVEVIEW]</code> lines are Google confirming the same impression.</p>
+  <p><code>[SN] [CLIP]</code> — the honest-measurement resizing: the window size the ad page currently gets (section 6).</p>
+  <p><code>[SN] [NATIVE]</code> — consent and setup: readiness, answers, holdbacks and reloads.</p>
+  <p><code>[SN] [FLUTTER]</code> — the bridge between Dart and native, Flutter apps only.</p>
+  <p><code>[SN] [WebAdView] [HTML]</code> — messages from inside the ad page, bridged out so you never need a web inspector.</p>
+
+  <h2>What a healthy scroll looks like</h2>
+<pre style="font-size:6.9pt">[SN] [LLM] Ad div-gpt-ad-mobile_2 TRANSITION: notLoaded -> fetched
+[SN] [LLM] Ad div-gpt-ad-mobile_2 TRANSITION: fetched -> displayed
+[SN] [VIEWABILITY] div-gpt-ad-mobile_2: 52% visible — ≥50% reached, continuous timer STARTED (needs 1.0s, display)
+[SN] [VIEWABILITY] div-gpt-ad-mobile_2: 93% visible | in-view 1.00s / 1.00s (display) | ✅ VIEWABLE (latched)
+[SN] [VIEWABILITY] [ACTIVEVIEW] div-gpt-ad-mobile_2__…: impressionViewable — Google counted a viewable impression</pre>
+  <p class="small">The same five lines appear on iOS and Android — the two implementations share their log format on purpose, so STEP Network can validate either platform the same way.</p>
+  <div class="ftr"><span>WebAdView SDK — documentation &amp; guide</span><span>11 · Debugging</span></div>
+</section>
+
+</body>
+</html>

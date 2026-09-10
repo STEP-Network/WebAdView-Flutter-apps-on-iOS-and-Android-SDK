@@ -28,6 +28,8 @@ let package = Package(
                 "WebAdViewCore",
                 .product(name: "Didomi", package: "didomi-ios-sdk-spm"),
             ],
+            // App Store privacy manifest (UserDefaults required-reason API).
+            resources: [.copy("PrivacyInfo.xcprivacy")],
             linkerSettings: [
                 // Required by the Didomi binary xcframework when consumed
                 // from a package target.

@@ -1,9 +1,10 @@
 # WebAdView Bridge Contract
 
 Platform-neutral specification of the contract between the **native SDK layer**
-(iOS today, Android later) and the **web ad template** (GPT + Yield Manager)
-loaded inside each ad webview. An Android port implements exactly this
-contract against `android.webkit.WebView`; the template does not change.
+(the Swift SDK on iOS, its Kotlin port on Android — both shipped through the
+Flutter plugin, the Swift SDK also directly) and the **web ad template**
+(GPT + Yield Manager) loaded inside each ad webview. Both implementations
+follow this contract; the template does not change.
 
 ---
 
@@ -82,11 +83,11 @@ All messages are objects with a `type` discriminator:
 
 ## 3. Native → web injections
 
-Injected before/at page load (iOS: `WKUserScript`; Android: `evaluateJavascript` at `onPageStarted` — note Android has no true document-start user scripts, so inject as early as possible):
+Injected at document start (iOS: `WKUserScript`; Android: `WebViewCompat.addDocumentStartJavaScript`, restricted to the template origin — true document-start injection, with an `evaluateJavascript`-at-`onPageStarted` fallback on WebViews that lack the feature):
 
 | Injection | Timing | Content |
 |---|---|---|
-| Consent handoff | document start | Provider-dependent. Default (SDK-owned Didomi): `Didomi.shared.getJavaScriptForWebView()` (iOS) / `Didomi.getInstance().getJavaScriptForWebView()` (Android) — passes native consent into the web Didomi SDK. Bring-your-own-CMP mode (`TCFConsentProvider`): a minimal in-app-webview `__tcfapi` stub (`ping`/`getTCData`/`addEventListener`/`removeEventListener`, `eventStatus: 'tcloaded'`) carrying the `IABTCF_TCString`/`IABTCF_gdprApplies` values as a JSON-encoded literal; the template must then NOT load a CMP web tag of its own. |
+| Consent handoff | document start | Provider-dependent. Default (SDK-owned Didomi): `Didomi.shared.getJavaScriptForWebView()` (iOS) / `Didomi.getInstance().getJavaScriptForWebView()` (Android) — passes native consent into the web Didomi SDK. Bring-your-own-CMP modes (`TCFConsentProvider` and `AppDidomiConsentProvider`): an in-app-webview `__tcfapi` stub (`ping`/`getTCData`/`addEventListener`/`removeEventListener`, `eventStatus: 'tcloaded'`) carrying the `IABTCF_TCString`/`IABTCF_gdprApplies` values as a JSON-encoded literal AND decoding the TC string's core segment in-page into the standard TCData maps (`purpose.consents`, `purpose.legitimateInterests`, `vendor.*`, `specialFeatureOptins`, `cmpId`, `tcfPolicyVersion`, `publisherCC`, …) — the STEP template's consent listener reads `tcData.purpose.*` for its limited-ads decision (added 2026-09-10; before that the listener threw and the decision never ran). The JavaScript is byte-identical in `TCFConsentProvider.swift` and `TcfApiStub.kt`; the iOS suite runs it in JavaScriptCore against known accept-all / decline-all strings. The template must NOT load a CMP web tag of its own. |
 | Viewability shim | document start | See §4. Installs `window.stepnetwork._onViewability` and the page-side subscribe API. |
 | Ad unit id | document end | `window.stepnetwork = window.stepnetwork \|\| {}; window.stepnetwork.adUnitId = '<id>';` |
 | Custom targeting | document end | `googletag.cmd.push(function () { googletag.pubads().setTargeting(<key>, <value-or-array>); ... });` Keys/values MUST be JSON-encoded when generating this script — never raw string interpolation. |
@@ -117,8 +118,9 @@ window.stepnetwork.lazyLoad = { "fetch": 150, "render": 100 };
 **Units: viewport-height percentage points** (confirmed by ad-ops
 2026-07-23 — all STEP lazy loading runs in viewport percentages, never px).
 100 = one full viewport; 150 = 1.5 viewports. `fetch` = distance before
-viewport entry at which to request the ad; `render` = distance at which to
-display it; `fetch ≥ render` always. Native converts against the live
+viewport entry at which the ad page starts loading (`fetched`, §6);
+`render` = distance at which the ad is requested and displayed (the manual
+render trigger, §3.1); `fetch ≥ render` always. Native converts against the live
 scroll viewport: `distance = viewportHeight × value / 100` (re-derived on
 every check, so rotations/resizes are tracked automatically).
 
@@ -251,29 +253,57 @@ unloaded ──(within fetchThreshold)──────────────
 
 | Name | Meaning |
 |---|---|
-| consent provider | SDK-owned Didomi (default; `didomiAPIKey` injected at SDK init — never hardcode in the SDK), app-owned TCF CMP (reads the standardized `IABTCF_*` storage: `UserDefaults` on iOS, `SharedPreferences` on Android), or app-owned Didomi (`AppDidomiConsentProvider` on iOS: gates on Didomi's own answered-state — a TC string published before the user answers does not open the gate — while the page hand-off stays the `__tcfapi` stub). Consent changes AFTER an ad has loaded reload that ad's page (the consent hand-off is a load-time snapshot; the reload triggers only when the provider's hand-off script actually changed). |
+| consent provider | SDK-owned Didomi (default; `didomiAPIKey` injected at SDK init — never hardcode in the SDK), app-owned TCF CMP (reads the standardized `IABTCF_*` storage: `UserDefaults` on iOS, `SharedPreferences` on Android), or app-owned Didomi (`AppDidomiConsentProvider`, both platforms: gates on Didomi's own answered-state — a TC string published before the user answers does not open the gate — while the page hand-off stays the `__tcfapi` stub). Consent changes AFTER an ad has loaded reload that ad's page (the consent hand-off is a load-time snapshot; the reload triggers only when the provider's hand-off script actually changed). |
 | `adTemplateURL` | Base template URL (§1). |
 | `fetchThreshold` / `displayThreshold` / `unloadThreshold` | Lazy-load distances in points (default 800/200/1600). Fetch/display are remotely overridden per domain via `window.stepnetwork.lazyLoad` in viewport-height % — remote always wins, even over explicitly set values (§3.2). |
 | `unloadingEnabled` | Default `false`. |
 | viewability mode | Always `display`. `video` reserved (engine-level only, no public setter — see §4.2). |
 | debug toggle | Runtime flag gating all SDK logging + debug panel + `aym_debug`. |
 
-## 8. Android port assessment (honest)
+## 8. Android port — status and platform differences
+
+> **Status (2026-09-08):** this contract now backs the Flutter plugin
+> (`Flutter/webadview_flutter`) on BOTH platforms. Its iOS half reuses the
+> native SDK through a UIKit layer (`WebAdScope` / `WebAdHostView`); its
+> Android half (`android/src/main/kotlin/…`) is the Kotlin port of this
+> document — verified end to end on an API 36 emulator (consent, template
+> load, creative render, native viewable latch, GPT `impressionViewable`).
+> Dart owns all geometry and sends the viewport plus per-ad frames (whole ad
+> and creative-only) in logical pixels; native runs §5/§6 unchanged. Three
+> findings from the port: (1) the reference templates hard-code
+> `window.webkit.messageHandlers.nativeBridge.postMessage(obj)`, so Android
+> must install a document-start shim defining that object and forwarding
+> `JSON.stringify(obj)` to its own bridge (installed with `androidx.webkit`'s
+> `addDocumentStartJavaScript`, see §3); (2) Didomi
+> Android needs a `FragmentActivity` (`FlutterFragmentActivity` in Flutter);
+> (3) Chromium's resize anchoring keeps the visible CSS width constant when
+> the WebView's WIDTH changes (ad refreshes alternating 300 ↔ 320 wide), so
+> the page scale ratchets upward (measured 1 → 1.06 → 1.98) and the creative
+> renders zoomed and cropped — WKWebView has no such behaviour. Android must
+> pin the page scale: `useWideViewPort` + `loadWithOverviewMode`, zoom
+> disabled, and a document-start script (`InjectedScripts.PAGE_SCALE_PIN`)
+> appending a viewport meta with `minimum-scale=1, maximum-scale=1` after
+> the template's own meta. Verify with `visualViewport.scale === 1` in the
+> ad page (Chrome DevTools over `adb forward … webview_devtools_remote_<pid>`)
+> across several refreshes; `WebViewClient.onScaleChanged` is logged under
+> `[SN] [CLIP]` and must stay silent.
 
 **Transfers 1:1 (this document):** template URL contract, message schemas,
 targeting conventions, both state machines, config surface, consent-gating
 architecture (the Didomi Android SDK mirrors iOS: initialize / onReady /
 event listener / `getJavaScriptForWebView`).
 
-**Must be rewritten per platform (all view/geometry code):**
+**Rewritten per platform (all view/geometry code):**
 - `android.webkit.WebView` + `WebViewClient`/`WebChromeClient` instead of
-  WKWebView/WKUserScript. Script injection timing differs (no document-start
-  user scripts — inject at `onPageStarted`).
-- View-position tracking: Compose `onGloballyPositioned` / RecyclerView scroll
-  listeners instead of SwiftUI GeometryReader/PreferenceKeys.
+  WKWebView/WKUserScript; injection through `WebViewCompat.addDocumentStartJavaScript` (§3).
+- View-position tracking: in the Flutter plugin Dart owns all geometry and
+  pushes the viewport plus per-ad rects once per frame on both platforms;
+  native never polls view positions (the SwiftUI SDK uses
+  GeometryReader/PreferenceKeys for the same input).
 - External-URL handling via `Intent.ACTION_VIEW`.
 - App-lifecycle: `ProcessLifecycleOwner` / `ON_PAUSE`-`ON_RESUME` instead of
   `willResignActive`/`didBecomeActive`.
 
-**Recommendation:** the portable core logic is ~150 lines; hand-port against
-this contract rather than introducing Kotlin Multiplatform.
+**How the port was done:** by hand against this contract (the portable core
+logic is ~150 lines); Kotlin Multiplatform was considered and rejected. Its
+JVM unit tests are ports of the Swift core tests.

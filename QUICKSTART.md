@@ -18,11 +18,15 @@ From your STEP Network onboarding:
 
 ## 1. Add the SDK package
 
-In your app project: **File → Add Package Dependencies…**, paste the
-repository URL, and add the **WebAdViewSDK** product to your app target.
+In your app project: **File → Add Package Dependencies…**, paste
+`https://github.com/STEP-Network/WebAdView-ios-SDK.git`, choose version
+`1.0.0` or newer, and add the **WebAdViewSDK** product to your app target.
 
-> Package not published yet? Use **Add Local…** (bottom-left in the same
-> dialog) and select your copy of the `SDK-WebAdView` folder instead.
+> Working from a checkout instead (for example the copy STEP Network sent
+> you)? Use **Add Local…** (bottom-left in the same dialog) and select the
+> repository folder — the one containing `Package.swift`. Keep that folder
+> at a path **without spaces**; Xcode 26.6 crashes while resolving the
+> package graph otherwise.
 
 > ⚠️ **Your app must be a standard App project.** Swift Playgrounds / App
 > Playground packages (`.swiftpm`) are NOT supported: that format cannot
@@ -57,7 +61,7 @@ struct MyAppApp: App {   // keep your app's own name
             didomiAPIKey: "<YOUR-DIDOMI-API-KEY>",              // from STEP Network
             adTemplateURL: URL(string: "<YOUR-AD-TEMPLATE-URL>")!  // from STEP Network
         ))
-        DebugSettings.shared.isDebugEnabled = true  // console logging (remove for release)
+        DebugSettings.shared.isDebugEnabled = true  // console logging — see the note below
     }
 
     var body: some Scene {
@@ -67,6 +71,11 @@ struct MyAppApp: App {   // keep your app's own name
     }
 }
 ```
+
+> The debug flag is **remembered between launches** (it is stored in
+> UserDefaults), so deleting the line later does not switch it off on a
+> device that already ran it. For release either set it to `false` or wrap
+> the line in `#if DEBUG`.
 
 **If your app already has an `AppDelegate`** — put the same call at the top
 of your existing `application(_:didFinishLaunchingWithOptions:)`:
@@ -80,7 +89,7 @@ func application(_ application: UIApplication,
         didomiAPIKey: "<YOUR-DIDOMI-API-KEY>",
         adTemplateURL: URL(string: "<YOUR-AD-TEMPLATE-URL>")!
     ))
-    DebugSettings.shared.isDebugEnabled = true  // console logging (remove for release)
+    DebugSettings.shared.isDebugEnabled = true  // console logging — remembered between launches, see above
     // …your existing launch code…
     return true
 }
@@ -131,7 +140,7 @@ When you move this into your own screens, keep three pieces: a
 `WebAdView(adUnitId:)` per ad, `.lazyLoadAd()` on the containing
 `ScrollView` or `List` (required — ads never load without it), and
 `.background(DidomiWrapper())` once anywhere in the hierarchy. A `List`
-works the same — see GUIDE §5 for one thing to know about row recycling.
+works the same — see [GUIDE §5](GUIDE.md#5-lazy-loading) for one thing to know about row recycling.
 
 Now continue with **step 4**.
 
@@ -154,7 +163,7 @@ struct MyAppApp: App {   // keep your app's own name
             consentProvider: TCFConsentProvider(),  // reads your CMP's answer — no Didomi key needed
             adTemplateURL: URL(string: "<YOUR-AD-TEMPLATE-URL>")!  // from STEP Network
         ))
-        DebugSettings.shared.isDebugEnabled = true  // console logging (remove for release)
+        DebugSettings.shared.isDebugEnabled = true  // console logging — remembered between launches, see step 2
     }
 
     var body: some Scene {
@@ -168,7 +177,7 @@ struct MyAppApp: App {   // keep your app's own name
 > Your own consent system **is Didomi**? Use
 > `consentProvider: AppDidomiConsentProvider()` on that line instead — the
 > SDK then asks your Didomi directly whether the notice has been answered
-> (details: GUIDE §3b).
+> (details: [GUIDE §3b](GUIDE.md#3b-bringing-your-own-cmp)).
 
 **Put ads in a scroll view** — a complete working screen; add it as a new
 file, then move the pieces into your own screens:
@@ -217,7 +226,7 @@ Two things to know:
   (reference: `Documentation/example-ad-template-own-cmp.html`). The test
   template under *Test values* is built for Path A and won't work here.
 - Details, requirements, and the production caveat:
-  [GUIDE.md §3b "Bringing your own CMP"](GUIDE.md).
+  [GUIDE.md §3b "Bringing your own CMP"](GUIDE.md#3b-bringing-your-own-cmp).
 
 ## 4. Run
 
@@ -263,9 +272,10 @@ values from STEP Network in the snippets above while you develop:
 | Symptom | Fix |
 |---|---|
 | Ads never appear | Is `.lazyLoadAd()` on the ScrollView? Was the consent notice answered? Is `WebAdViewSDK.initialize` called before any view? |
-| Ads never appear (Path B) | Has your own CMP recorded an answer? It must have written `IABTCF_TCString` to UserDefaults — see GUIDE §3b. |
+| Ads never appear (Path B) | Has your own CMP recorded an answer? It must have written `IABTCF_TCString` to UserDefaults (or `IABTCF_gdprApplies = 0`) — see [GUIDE §3b](GUIDE.md#3b-bringing-your-own-cmp). |
 | No consent notice | Path A: is `.background(DidomiWrapper())` in the hierarchy? Delete the app and reinstall (consent is remembered per install). Path B: the SDK never shows one — your own CMP does. |
 | No `[SN]` console output | Is `DebugSettings.shared.isDebugEnabled = true` set? |
+| Ads stay an empty 320×320 box, no `[SN] [LLM]` lines | `.lazyLoadAd()` is missing on the scroll container — the SDK shows an empty placeholder and logs nothing. |
 
 Prefer testing in a sandbox first? Create a fresh SwiftUI **App** project
 (not a Playground), point its `WindowGroup` at `AdExampleView()`, and use
