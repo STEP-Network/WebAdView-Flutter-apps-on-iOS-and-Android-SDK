@@ -1,0 +1,29 @@
+name: webadview_flutter
+description: "STEP Network WebAdView for Flutter: privacy-compliant web ads (Didomi consent gating, lazy loading, native IAB/MRC viewability) rendered by the native WebAdView SDK."
+version: 0.1.0
+homepage: https://github.com/STEP-Network/WebAdView-Flutter-apps-on-iOS-and-Android-SDK
+repository: https://github.com/STEP-Network/WebAdView-Flutter-apps-on-iOS-and-Android-SDK
+issue_tracker: https://github.com/STEP-Network/WebAdView-Flutter-apps-on-iOS-and-Android-SDK/issues
+publish_to: 'none' # distributed as a Git dependency (see README §1), not on pub.dev
+
+environment:
+  sdk: ^3.13.0
+  flutter: '>=3.44.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: WebAdViewFlutterPlugin
+      android:
+        package: dk.stepnetwork.webadview_flutter
+        pluginClass: WebAdViewFlutterPlugin

@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Ad pages, GPT and Didomi all need the network. Flutter's own template
+         only declares INTERNET for debug builds; merging it here keeps
+         release builds working. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

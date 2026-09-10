@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "didomi-ios-sdk-spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/didomi/didomi-ios-sdk-spm",
+      "state" : {
+        "revision" : "4ba4a46e51acea503345bef22c8f2c53e75827c6",
+        "version" : "2.49.0"
+      }
+    }
+  ],
+  "version" : 2
+}
