@@ -218,7 +218,7 @@ viewport, which defeats the fetch-ahead distance. Set
 
 ```dart
 ListView.builder(
-  cacheExtent: LazyLoadAdScope.recommendedCacheExtent(context),
+  scrollCacheExtent: LazyLoadAdScope.recommendedCacheExtent(context),
   …
 )
 ```
@@ -228,7 +228,7 @@ requests** when they come back — the same behaviour as `List` in the
 SwiftUI SDK. `SingleChildScrollView` + `Column` behaves like `ScrollView`:
 ads live until unloading. The heuristic cannot see STEP's remote values: if
 STEP Network configures a fetch distance above 150 % of the viewport for
-your domain, pass a correspondingly larger `cacheExtent`.
+your domain, pass a correspondingly larger `scrollCacheExtent`.
 
 If an overlay is drawn *inside* the scope's bounds (a pinned
 `SliverAppBar`), exclude it from the measured viewport:

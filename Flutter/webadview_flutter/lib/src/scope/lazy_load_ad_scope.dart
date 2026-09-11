@@ -75,7 +75,7 @@ class LazyLoadAdScope extends StatefulWidget {
   /// scope's bounds (e.g. a pinned `SliverAppBar` height at the top).
   final EdgeInsets viewportInsets;
 
-  /// A `cacheExtent` for builder-based lists that lets ads exist early
+  /// A `scrollCacheExtent` for builder-based lists that lets ads exist early
   /// enough for the fetch zone. Heuristic: the local fetch threshold or 1.5
   /// screen heights, whichever is larger (STEP's remote percentages are
   /// not visible to Dart).
