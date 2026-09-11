@@ -1,3 +1,12 @@
+## 0.1.1 — 2026-09-11
+
+- Native viewability only starts counting once the creative has rendered
+  (the page's `adSize` message). Before, the slot could latch a "viewable"
+  against the empty box while the page was still loading, so
+  `onViewabilityChange` could report `becameViewable` before any ad existed
+  and again after the load. Google Active View was never affected. Both
+  platforms; the Swift SDK ships the same fix as 1.1.1.
+
 ## 0.1.0 — 2026-09-10
 
 Initial release of `webadview_flutter`: STEP Network web ads for Flutter

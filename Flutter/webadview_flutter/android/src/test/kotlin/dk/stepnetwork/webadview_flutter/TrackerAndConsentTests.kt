@@ -40,7 +40,7 @@ class ViewabilityTrackerTest {
         val (t, _, _) = makeTracker()
         val received = ArrayList<ViewabilityUpdate>()
         t.onUpdate = { received += it }
-        t.register("ad", ViewabilityMode.DISPLAY)
+        t.register("ad", ViewabilityMode.DISPLAY); t.markRendered("ad")
         t.updateScrollViewBounds(bounds)
         t.updateContentFrame("ad", adFrame(0.75))
         assertTrue(received.isNotEmpty())
@@ -52,7 +52,7 @@ class ViewabilityTrackerTest {
         val (t, advance, scheduler) = makeTracker()
         var latched = false
         t.onUpdate = { if (it.becameViewable) latched = true }
-        t.register("ad", ViewabilityMode.DISPLAY)
+        t.register("ad", ViewabilityMode.DISPLAY); t.markRendered("ad")
         t.updateScrollViewBounds(bounds)
         var y = 300.0
         t.updateContentFrame("ad", Rect(0.0, y, 100.0, 100.0))
@@ -65,7 +65,7 @@ class ViewabilityTrackerTest {
         val (t, advance, _) = makeTracker()
         var last: ViewabilityUpdate? = null
         t.onUpdate = { last = it }
-        t.register("ad", ViewabilityMode.DISPLAY)
+        t.register("ad", ViewabilityMode.DISPLAY); t.markRendered("ad")
         t.updateScrollViewBounds(bounds)
         t.updateContentFrame("ad", Rect(0.0, 300.0, 100.0, 100.0))
         advance(0.7); t.updateContentFrame("ad", Rect(0.0, 301.0, 100.0, 100.0))
@@ -84,12 +84,37 @@ class ViewabilityTrackerTest {
         val (t, _, _) = makeTracker()
         val js = ArrayList<ViewabilityUpdate>()
         t.onJsUpdate = { js += it }
-        t.register("ad", ViewabilityMode.DISPLAY)
+        t.register("ad", ViewabilityMode.DISPLAY); t.markRendered("ad")
         t.updateScrollViewBounds(bounds)
         t.updateContentFrame("ad", adFrame(0.60)); assertEquals(1, js.size)
         t.updateContentFrame("ad", adFrame(0.62)); assertEquals(1, js.size) // < 5 %
         t.updateContentFrame("ad", adFrame(0.70)); assertEquals(2, js.size) // ≥ 5 %
         t.updateContentFrame("ad", adFrame(0.40)); assertEquals(3, js.size) // visible → false
+    }
+
+    @Test fun `no dwell and no verdict before the creative renders, re-armed per impression`() {
+        val (t, advance, _) = makeTracker()
+        var updates = 0; var latches = 0
+        t.onUpdate = { updates++; if (it.becameViewable) latches++ }
+        t.register("ad", ViewabilityMode.DISPLAY)
+        t.updateScrollViewBounds(bounds)
+        // Fully visible for 1.5 s while the page is still loading: nothing.
+        t.updateContentFrame("ad", Rect(0.0, 300.0, 100.0, 100.0))
+        advance(1.5); t.updateContentFrame("ad", Rect(0.0, 301.0, 100.0, 100.0))
+        assertEquals(0, updates); assertEquals(0, latches)
+        // The creative renders: counting starts NOW, not at load.
+        t.markRendered("ad")
+        advance(0.5); t.updateContentFrame("ad", Rect(0.0, 302.0, 100.0, 100.0))
+        assertEquals(0, latches)
+        advance(0.6); t.updateContentFrame("ad", Rect(0.0, 303.0, 100.0, 100.0))
+        assertEquals(1, latches)
+        // A reload re-arms and parks again until the next render.
+        t.resetImpression("ad")
+        advance(1.5); t.updateContentFrame("ad", Rect(0.0, 304.0, 100.0, 100.0))
+        assertEquals(1, latches)
+        t.markRendered("ad")
+        advance(1.1); t.updateContentFrame("ad", Rect(0.0, 305.0, 100.0, 100.0))
+        assertEquals(2, latches)
     }
 
     @Test fun `clips emit on significant change and unregister stops everything`() {

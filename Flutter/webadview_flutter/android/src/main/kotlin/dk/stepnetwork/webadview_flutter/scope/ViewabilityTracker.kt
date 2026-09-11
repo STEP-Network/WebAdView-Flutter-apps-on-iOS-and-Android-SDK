@@ -24,6 +24,8 @@ class ViewabilityTracker(
 ) {
     private val engines = LinkedHashMap<String, ViewabilityEngine>()
     private val contentFrames = HashMap<String, Rect>()
+    /** Ads whose creative has rendered (adSize received); until then no dwell accrues (port of `rendered`). */
+    private val rendered = HashSet<String>()
     private var scrollViewBounds: Rect = Rect.ZERO
     private var isAppActive = true
     private var isHostVisible = true
@@ -62,6 +64,7 @@ class ViewabilityTracker(
     fun unregister(adUnitId: String) {
         if (engines.remove(adUnitId) == null) return
         contentFrames.remove(adUnitId)
+        rendered.remove(adUnitId)
         lastSentToJS.remove(adUnitId)
         lastClip.remove(adUnitId)
         lastLogTime.remove(adUnitId)
@@ -69,13 +72,21 @@ class ViewabilityTracker(
         if (engines.isEmpty()) stopTicker() else evaluate()
     }
 
-    /** Re-arms the engine for a new impression (webview recreated). */
+    /** Re-arms the engine for a new impression (webview recreated or template (re)loaded); parked until [markRendered]. */
     fun resetImpression(adUnitId: String) {
         val engine = engines[adUnitId] ?: return
         engine.reset()
+        rendered.remove(adUnitId)
         lastSentToJS.remove(adUnitId)
         lastClip.remove(adUnitId)
-        SNLog.d("[SN] [VIEWABILITY] $adUnitId: new impression — verdict re-armed")
+        SNLog.d("[SN] [VIEWABILITY] $adUnitId: new impression — verdict re-armed, waiting for the creative to render")
+        evaluate()
+    }
+
+    /** The creative has rendered (the page reported its adSize): dwell may accrue from now on. */
+    fun markRendered(adUnitId: String) {
+        if (!engines.containsKey(adUnitId) || !rendered.add(adUnitId)) return
+        SNLog.d("[SN] [VIEWABILITY] $adUnitId: creative rendered — measurement started")
         evaluate()
     }
 
@@ -121,13 +132,15 @@ class ViewabilityTracker(
 
         for ((adUnitId, engine) in engines.entries.toList()) {
             val frame = contentFrames[adUnitId] ?: continue
+            // Clips flow regardless (applied by the controller once rendered); measurement only for rendered ads.
+            forwardClipIfNeeded(adUnitId, frame, viewport)
+            if (adUnitId !in rendered) continue
             val previous = engine.state
             val update = engine.ingest(frame, viewport, isActive, now)
             if (engine.state is ViewabilityEngine.State.Counting) anyCounting = true
 
             onUpdate(update)
             forwardToJSIfNeeded(update)
-            forwardClipIfNeeded(adUnitId, frame, viewport)
             log(update, previous, engine.state, now)
         }
 

@@ -175,6 +175,7 @@ class AdWebViewController(
             is BridgeMessage.AdSize -> {
                 SNLog.d("[SN] [WebAdView] [HTML] [adSize] width: ${msg.width}, height: ${msg.height}")
                 callbacks.onAdSize(msg.width, msg.height)
+                scope.tracker.markRendered(adUnitId) // the creative exists now: viewability may start counting
                 if (!hasRenderedAd) {
                     hasRenderedAd = true
                     val pending = pendingClip

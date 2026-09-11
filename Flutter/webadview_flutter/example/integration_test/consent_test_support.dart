@@ -7,8 +7,8 @@ import 'package:webadview_flutter_example/config.dart';
 /// scrollable, fully on screen, with every signal the Dart API exposes
 /// captured. The definitive "an ad was requested, rendered and seen" signal
 /// is Google's own Active View verdict ([WebAdView.onActiveViewImpression]);
-/// the native viewability latch alone is NOT proof of a load, because the
-/// tracker measures the placeholder box before any ad exists.
+/// the native latch is a second, independent signal (it only counts once the
+/// creative has rendered).
 ///
 /// A RELOAD is proven by a second native viewable latch: the SDK re-arms
 /// the impression only when it (re)loads the ad page — never on a timed

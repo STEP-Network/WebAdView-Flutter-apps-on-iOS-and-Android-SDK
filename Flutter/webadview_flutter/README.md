@@ -31,7 +31,7 @@ dependencies:
     git:
       url: https://github.com/STEP-Network/WebAdView-Flutter-apps-on-iOS-and-Android-SDK.git
       path: Flutter/webadview_flutter
-      ref: v0.1.0
+      ref: v0.1.1
 ```
 
 Or from a local clone of the **whole repository** (the plugin's Swift
@@ -269,7 +269,9 @@ WebAdView(
 
 `onViewabilityChange` fires up to once per frame while scrolling and ten
 times per second while the in-view timer runs; react to `becameViewable`
-rather than calling `setState` per update. Viewport resizing (honest
+rather than calling `setState` per update. Nothing fires before the
+creative has rendered — an empty or still-loading slot never counts — and
+every page load starts a fresh impression. Viewport resizing (honest
 Active View measurement) is on by default; `viewportResizing: false` opts a
 single ad out, only in coordination with STEP Network. A screen covered by
 another route stops measuring automatically.
