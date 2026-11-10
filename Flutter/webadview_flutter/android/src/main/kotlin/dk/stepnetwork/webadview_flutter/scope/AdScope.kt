@@ -9,6 +9,7 @@ import dk.stepnetwork.webadview_flutter.core.RemoteLazyLoadConfig
 import dk.stepnetwork.webadview_flutter.core.ViewabilityMode
 import dk.stepnetwork.webadview_flutter.core.ViewabilityUpdate
 import dk.stepnetwork.webadview_flutter.core.ViewportClipCalculator
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * One scope per Dart `LazyLoadAdScope` (port of WebAdScope): the container's
@@ -35,11 +36,20 @@ class AdScope(
     init {
         manager.configure(config)
         if (cachedRemote != null) manager.applyRemote(cachedRemote)
-        manager.onStateChange = { id, state -> loadStateListeners[id]?.toList()?.forEach { it(state) } }
-        tracker.onUpdate = { u -> viewabilityListeners[u.adUnitId]?.toList()?.forEach { it(u) } }
-        tracker.onJsUpdate = { u -> jsListeners[u.adUnitId]?.toList()?.forEach { it(u) } }
-        tracker.onClip = { id, clip -> clipListeners[id]?.toList()?.forEach { it(clip) } }
+        manager.onStateChange = { id, state -> loadStateListeners[id]?.forEach { it(state) } }
+        // Hosts get the rate-limited stream (see ViewabilityTracker.onHostUpdate).
+        tracker.onHostUpdate = { u -> viewabilityListeners[u.adUnitId]?.forEach { it(u) } }
+        tracker.onJsUpdate = { u -> jsListeners[u.adUnitId]?.forEach { it(u) } }
+        tracker.onClip = { id, clip -> clipListeners[id]?.forEach { it(clip) } }
     }
+
+    /** Geometry of one ad for [updateGeometry]. */
+    class AdGeometry(
+        /** Whole ad frame, label included (lazy loading). */
+        val frame: Rect,
+        /** Creative-only frame (viewability). */
+        val creative: Rect,
+    )
 
     // ---- geometry (dp, Flutter-view coordinates) ----------------------------
 
@@ -51,6 +61,22 @@ class AdScope(
     fun updateAdFrame(adUnitId: String, frame: Rect) = manager.updateAdFrame(adUnitId, frame)
 
     fun updateCreativeFrame(adUnitId: String, frame: Rect) = tracker.updateContentFrame(adUnitId, frame)
+
+    /**
+     * Preferred entry point: the viewport and every ad's geometry in ONE call
+     * per rendered frame — each state machine runs exactly one pass per batch
+     * (the per-item methods above each run a pass of their own).
+     */
+    fun updateGeometry(viewport: Rect, ads: Map<String, AdGeometry>) {
+        val frames = HashMap<String, Rect>(ads.size * 2)
+        val creatives = HashMap<String, Rect>(ads.size * 2)
+        for ((id, g) in ads) {
+            frames[id] = g.frame
+            creatives[id] = g.creative
+        }
+        manager.updateGeometry(viewport, frames)
+        tracker.updateGeometry(viewport, creatives)
+    }
 
     // ---- registration ---------------------------------------------------------
 
@@ -65,6 +91,17 @@ class AdScope(
         clipListeners.remove(adUnitId)
     }
 
+    /**
+     * The host stopped reporting geometry for an ad whose controller it keeps
+     * alive for re-attachment (disposed widget): load state, impression and
+     * verdict survive; nothing is measured or transitioned until geometry
+     * is reported again.
+     */
+    fun detach(adUnitId: String) {
+        manager.detachAd(adUnitId)
+        tracker.detach(adUnitId)
+    }
+
     fun setHostVisible(visible: Boolean) = tracker.setHostVisible(visible)
 
     fun setAppActive(active: Boolean) = tracker.setAppActive(active)
@@ -74,23 +111,23 @@ class AdScope(
     // ---- listeners (a subscription replays the current state, like `$adStates`) --
 
     fun addLoadStateListener(adUnitId: String, listener: (AdLoadState) -> Unit): () -> Unit {
-        loadStateListeners.getOrPut(adUnitId) { ArrayList() }.add(listener)
+        loadStateListeners.getOrPut(adUnitId) { CopyOnWriteArrayList() }.add(listener)
         manager.adStates[adUnitId]?.let(listener)
         return { loadStateListeners[adUnitId]?.remove(listener) }
     }
 
     fun addViewabilityListener(adUnitId: String, listener: (ViewabilityUpdate) -> Unit): () -> Unit {
-        viewabilityListeners.getOrPut(adUnitId) { ArrayList() }.add(listener)
+        viewabilityListeners.getOrPut(adUnitId) { CopyOnWriteArrayList() }.add(listener)
         return { viewabilityListeners[adUnitId]?.remove(listener) }
     }
 
     fun addJsListener(adUnitId: String, listener: (ViewabilityUpdate) -> Unit): () -> Unit {
-        jsListeners.getOrPut(adUnitId) { ArrayList() }.add(listener)
+        jsListeners.getOrPut(adUnitId) { CopyOnWriteArrayList() }.add(listener)
         return { jsListeners[adUnitId]?.remove(listener) }
     }
 
     fun addClipListener(adUnitId: String, listener: (ViewportClipCalculator.Clip) -> Unit): () -> Unit {
-        clipListeners.getOrPut(adUnitId) { ArrayList() }.add(listener)
+        clipListeners.getOrPut(adUnitId) { CopyOnWriteArrayList() }.add(listener)
         return { clipListeners[adUnitId]?.remove(listener) }
     }
 

@@ -24,6 +24,10 @@ abstract class AdScopeClient {
   /// Creative only — drives viewability.
   BoxHandle get creativeHandle;
 
+  /// False when nobody listens to [onViewability]: native then sends no
+  /// viewability updates for this ad over the channel.
+  bool get wantsViewability;
+
   void onLoadState(AdLoadState state);
   void onViewability(ViewabilityUpdate update);
 }
@@ -161,7 +165,10 @@ class LazyLoadAdScopeState extends State<LazyLoadAdScope> {
     }
     _clients[id] = client;
     _forceNext = true;
-    if (_supported) _platform.registerAd(scopeId, id);
+    if (_supported) {
+      _platform.registerAd(scopeId, id,
+          wantsViewability: client.wantsViewability);
+    }
     // Make sure a frame runs so the first geometry report goes out.
     SchedulerBinding.instance.ensureVisualUpdate();
   }
@@ -172,6 +179,17 @@ class LazyLoadAdScopeState extends State<LazyLoadAdScope> {
     _clients.remove(id);
     _forceNext = true;
     if (_supported) _platform.unregisterAd(scopeId, id);
+  }
+
+  /// The client's [AdScopeClient.wantsViewability] changed: tell native
+  /// (a re-register keeps the ad's native state, only the subscription moves).
+  void updateViewabilityInterest(AdScopeClient client) {
+    final id = client.adUnitId;
+    if (!identical(_clients[id], client)) return;
+    if (_supported) {
+      _platform.registerAd(scopeId, id,
+          wantsViewability: client.wantsViewability);
+    }
   }
 
   /// Request a report on the next frame even if nothing moved.

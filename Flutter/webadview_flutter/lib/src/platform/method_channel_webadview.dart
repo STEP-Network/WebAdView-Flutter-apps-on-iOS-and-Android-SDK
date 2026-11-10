@@ -93,9 +93,13 @@ class MethodChannelWebAdView extends WebAdViewPlatform {
           <String, Object?>{'scopeId': scopeId, 'visible': visible});
 
   @override
-  Future<void> registerAd(String scopeId, String adUnitId) =>
-      _invoke<void>('registerAd',
-          <String, Object?>{'scopeId': scopeId, 'adUnitId': adUnitId});
+  Future<void> registerAd(String scopeId, String adUnitId,
+          {bool wantsViewability = true}) =>
+      _invoke<void>('registerAd', <String, Object?>{
+        'scopeId': scopeId,
+        'adUnitId': adUnitId,
+        'wantsViewability': wantsViewability,
+      });
 
   @override
   Future<void> unregisterAd(String scopeId, String adUnitId) =>

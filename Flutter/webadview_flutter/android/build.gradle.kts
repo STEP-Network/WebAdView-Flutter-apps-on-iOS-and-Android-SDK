@@ -1,5 +1,5 @@
 group = "dk.stepnetwork.webadview_flutter"
-version = "0.1.1"
+version = "0.1.2"
 
 buildscript {
     val kotlinVersion = "2.4.0"

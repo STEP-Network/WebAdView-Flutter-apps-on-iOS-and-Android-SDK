@@ -49,6 +49,8 @@ class AdPlatformView(
     private val channel = MethodChannel(messenger, "${WebAdViewFlutterPlugin.CHANNEL_NAME}/ad/$viewId")
     private val container: FrameLayout
     private var controller: AdWebViewController? = null
+    private var entry: dk.stepnetwork.webadview_flutter.ScopeEntry? = null
+    private var adUnitId: String? = null
 
     init {
         val scopeId = params["scopeId"] as? String
@@ -64,7 +66,38 @@ class AdPlatformView(
                 if (values.isNullOrEmpty()) null else k to values
             }?.toMap() ?: emptyMap()
             val viewportResizing = params["viewportResizing"] as? Boolean ?: true
-            val ctrl = AdWebViewController(
+            this.entry = entry
+            this.adUnitId = adUnitId
+            val callbacks = object : AdWebViewController.Callbacks {
+                override fun onAdSize(width: Double, height: Double) {
+                    channel.invokeMethod("onAdSize", mapOf("width" to width, "height" to height))
+                }
+
+                override fun onActiveViewImpression(slotId: String) {
+                    channel.invokeMethod("onActiveViewImpression", mapOf("slotId" to slotId))
+                }
+
+                override fun onRenderProcessGone() {
+                    channel.invokeMethod("onRenderProcessGone", null)
+                }
+
+                override fun openExternal(uri: Uri) {
+                    val intent = Intent(Intent.ACTION_VIEW, uri)
+                    val activity = currentActivity()
+                    val launcher: Context = activity ?: context.applicationContext.also {
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    try {
+                        launcher.startActivity(intent)
+                    } catch (e: ActivityNotFoundException) {
+                        SNLog.d("[SN] [NATIVE] External URL handler: no activity for $uri")
+                    }
+                }
+            }
+            // A retained controller (the widget was disposed and is back)
+            // continues the same impression; otherwise this is a new ad.
+            val retained = entry.takeRetained(adUnitId)
+            val ctrl = retained?.also { it.callbacks = callbacks } ?: AdWebViewController(
                 context = context,
                 adUnitId = adUnitId,
                 scope = entry.scope,
@@ -72,37 +105,17 @@ class AdPlatformView(
                 viewportResizingEnabled = viewportResizing,
                 debugEnabled = DebugSettings(context).isDebugEnabled,
                 remoteStore = RemoteLazyLoadStore(context),
-                callbacks = object : AdWebViewController.Callbacks {
-                    override fun onAdSize(width: Double, height: Double) {
-                        channel.invokeMethod("onAdSize", mapOf("width" to width, "height" to height))
-                    }
-
-                    override fun onActiveViewImpression(slotId: String) {
-                        channel.invokeMethod("onActiveViewImpression", mapOf("slotId" to slotId))
-                    }
-
-                    override fun onRenderProcessGone() {
-                        channel.invokeMethod("onRenderProcessGone", null)
-                    }
-
-                    override fun openExternal(uri: Uri) {
-                        val intent = Intent(Intent.ACTION_VIEW, uri)
-                        val activity = currentActivity()
-                        val launcher: Context = activity ?: context.applicationContext.also {
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        try {
-                            launcher.startActivity(intent)
-                        } catch (e: ActivityNotFoundException) {
-                            SNLog.d("[SN] [NATIVE] External URL handler: no activity for $uri")
-                        }
-                    }
-                },
+                callbacks = callbacks,
             )
             controller = ctrl
             container = ctrl.container
-            container.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> ctrl.onContainerLayout() }
-            SNLog.d("[SN] [FLUTTER] platform view $viewId: hosting $adUnitId in scope $scopeId")
+            (container.parent as? android.view.ViewGroup)?.removeView(container) // left over from the previous host
+            entry.attach(adUnitId, ctrl)
+            if (retained != null) {
+                // The new widget starts at its initial size: tell it the real one now.
+                retained.lastAdSize?.let { (w, h) -> callbacks.onAdSize(w, h) }
+            }
+            SNLog.d("[SN] [FLUTTER] platform view $viewId: hosting $adUnitId in scope $scopeId${if (retained != null) " (re-attached)" else ""}")
         }
         if (!SdkState.isInitialized) SdkState.warnNotInitializedOnce()
     }
@@ -110,8 +123,25 @@ class AdPlatformView(
     override fun getView(): View = container
 
     override fun dispose() {
-        controller?.dispose()
-        controller = null
+        // Keep the ad alive for a widget that comes back (ListView rows).
         channel.setMethodCallHandler(null)
+        val ctrl = controller
+        controller = null
+        if (ctrl == null) return
+        val e = entry
+        val id = adUnitId
+        if (e != null && id != null) {
+            if (e.isAttached(id, ctrl)) ctrl.callbacks = NoopCallbacks // ours; a newer view's callbacks must stay
+            e.release(id, ctrl) // no-op when a newer view took the controller over
+        } else {
+            ctrl.dispose()
+        }
+    }
+
+    private object NoopCallbacks : AdWebViewController.Callbacks {
+        override fun onAdSize(width: Double, height: Double) {}
+        override fun onActiveViewImpression(slotId: String) {}
+        override fun onRenderProcessGone() {}
+        override fun openExternal(uri: Uri) {}
     }
 }

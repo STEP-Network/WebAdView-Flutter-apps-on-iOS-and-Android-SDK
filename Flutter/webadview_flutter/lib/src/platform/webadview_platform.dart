@@ -62,7 +62,11 @@ abstract class WebAdViewPlatform {
   Future<void> createScope(String scopeId, LazyLoadConfig config);
   Future<void> disposeScope(String scopeId);
   Future<void> setScopeVisible(String scopeId, bool visible);
-  Future<void> registerAd(String scopeId, String adUnitId);
+  /// [wantsViewability] false = the widget has no `onViewabilityChange`
+  /// listener: native sends no viewability updates for this ad (the
+  /// measurement itself, the webview bridge and viewport resizing continue).
+  Future<void> registerAd(String scopeId, String adUnitId,
+      {bool wantsViewability = true});
   Future<void> unregisterAd(String scopeId, String adUnitId);
   Future<void> updateGeometry(
       String scopeId, Rect viewport, Map<String, AdGeometry> ads);

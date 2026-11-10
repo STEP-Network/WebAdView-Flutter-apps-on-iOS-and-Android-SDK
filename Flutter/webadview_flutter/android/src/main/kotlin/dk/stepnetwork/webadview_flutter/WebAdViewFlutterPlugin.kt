@@ -7,6 +7,8 @@ import android.util.Log
 import androidx.fragment.app.FragmentActivity
 import dk.stepnetwork.webadview_flutter.consent.DidomiConsentProvider
 import dk.stepnetwork.webadview_flutter.core.AdLoadState
+import dk.stepnetwork.webadview_flutter.scope.AdScope
+import dk.stepnetwork.webadview_flutter.core.PerfCounters
 import dk.stepnetwork.webadview_flutter.core.LazyLoadingConfig
 import dk.stepnetwork.webadview_flutter.core.Rect
 import dk.stepnetwork.webadview_flutter.core.SNLog
@@ -207,12 +209,15 @@ class WebAdViewFlutterPlugin : FlutterPlugin, ActivityAware, MethodChannel.Metho
         val scopeId = call.argument<String>("scopeId") ?: return result.badArgs("scopeId")
         val adUnitId = call.argument<String>("adUnitId") ?: return result.badArgs("adUnitId")
         val entry = scopes[scopeId] ?: return result.error("unknown_scope", "No scope $scopeId — call createScope first", null)
+        // Absent = true (older Dart); false = the widget has no onViewabilityChange.
+        val wantsViewability = call.argument<Boolean>("wantsViewability") ?: true
         entry.registerAd(
             adUnitId,
             onLoadState = { state: AdLoadState ->
                 channel.invokeMethod("onLoadState", mapOf("scopeId" to scopeId, "adUnitId" to adUnitId, "state" to state.wireName))
             },
-            onViewability = { u: ViewabilityUpdate ->
+            onViewability = if (!wantsViewability) null else { u: ViewabilityUpdate ->
+                PerfCounters.increment(PerfCounters.Key.HOST_VIEWABILITY_OUT)
                 channel.invokeMethod(
                     "onViewability",
                     mapOf(
@@ -230,16 +235,21 @@ class WebAdViewFlutterPlugin : FlutterPlugin, ActivityAware, MethodChannel.Metho
         val scopeId = call.argument<String>("scopeId") ?: return result.badArgs("scopeId")
         val entry = scopes[scopeId] ?: return result.success(null) // stale after disposeScope
         val viewport = rect(call.argument<List<*>>("viewport")) ?: return result.badArgs("viewport")
+        val start = System.nanoTime()
         val ads = call.argument<Map<*, *>>("ads")
+        val geometry = HashMap<String, AdScope.AdGeometry>()
         if (ads != null) {
             for ((key, raw) in ads) {
                 val adUnitId = key as? String ?: continue
                 val rects = raw as? Map<*, *> ?: continue
-                rect(rects["frame"] as? List<*>)?.let { entry.scope.updateAdFrame(adUnitId, it) }
-                rect(rects["creative"] as? List<*>)?.let { entry.scope.updateCreativeFrame(adUnitId, it) }
+                val frame = rect(rects["frame"] as? List<*>) ?: continue
+                val creative = rect(rects["creative"] as? List<*>) ?: continue
+                geometry[adUnitId] = AdScope.AdGeometry(frame, creative)
             }
         }
-        entry.scope.updateViewport(viewport)
+        // One batch → one pass of each state machine (not one per ad).
+        entry.scope.updateGeometry(viewport, geometry)
+        PerfCounters.recordGeometryHandler((System.nanoTime() - start) / 1000.0)
         result.success(null)
     }
 

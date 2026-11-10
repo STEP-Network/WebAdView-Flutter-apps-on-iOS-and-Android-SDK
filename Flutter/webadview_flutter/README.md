@@ -31,7 +31,7 @@ dependencies:
     git:
       url: https://github.com/STEP-Network/WebAdView-Flutter-apps-on-iOS-and-Android-SDK.git
       path: Flutter/webadview_flutter
-      ref: v0.1.1
+      ref: v0.1.2
 ```
 
 Or from a local clone of the **whole repository** (the plugin's Swift
@@ -223,12 +223,14 @@ ListView.builder(
 )
 ```
 
-and note that items the builder disposes are **new impressions and new ad
-requests** when they come back — the same behaviour as `List` in the
-SwiftUI SDK. `SingleChildScrollView` + `Column` behaves like `ScrollView`:
-ads live until unloading. The heuristic cannot see STEP's remote values: if
-STEP Network configures a fetch distance above 150 % of the viewport for
-your domain, pass a correspondingly larger `scrollCacheExtent`.
+so ads are fetched ahead of the viewport. Items the builder disposes keep
+their ad natively: the webview, load state and impression stay alive (up
+to four per scope, oldest unloaded first) and re-attach when the row comes
+back — no new ad request, no reload, no work on the main thread mid-scroll.
+`SingleChildScrollView` + `Column` behaves like `ScrollView`: ads live
+until unloading. The heuristic cannot see STEP's remote values: if STEP
+Network configures a fetch distance above 150 % of the viewport for your
+domain, pass a correspondingly larger `scrollCacheExtent`.
 
 If an overlay is drawn *inside* the scope's bounds (a pinned
 `SliverAppBar`), exclude it from the measured viewport:
@@ -267,11 +269,13 @@ WebAdView(
 )
 ```
 
-`onViewabilityChange` fires up to once per frame while scrolling and ten
-times per second while the in-view timer runs; react to `becameViewable`
-rather than calling `setState` per update. Nothing fires before the
-creative has rendered — an empty or still-loading slot never counts — and
-every page load starts a fresh impression. Viewport resizing (honest
+`onViewabilityChange` is rate-limited to at most 15 updates per second per
+ad: the first update, every transition (`isVisible`, `isViewable`,
+`isAppActive`) and `becameViewable` arrive immediately, ratio/dwell-only
+changes are coalesced; nothing is sent at all for ads without a listener.
+React to `becameViewable` rather than calling `setState` per update.
+Nothing fires before the creative has rendered — an empty or still-loading
+slot never counts — and every page load starts a fresh impression. Viewport resizing (honest
 Active View measurement) is on by default; `viewportResizing: false` opts a
 single ad out, only in coordination with STEP Network. A screen covered by
 another route stops measuring automatically.
@@ -292,6 +296,41 @@ adb logcat -s SN                                                                
 `[SN] [VIEWABILITY]`, `[SN] [LLM]`, `[SN] [CLIP]` and `[SN] [FLUTTER]`
 lines show measurement, lazy-load transitions, viewport resizing and the
 Flutter bridge. The example app's ladybug button toggles the flag.
+
+### Scroll performance
+
+With the debug flag on, native prints one `[SN] [PERF]` line per second
+while anything happens:
+
+```
+[SN] [PERF] evaluate/s=42 resizes/s=0 js/s=1 geometryIn/s=42 (avg 56µs, max 185µs) viewabilityOut/s=0 webviewsCreated=1 (avg 7 ms)
+```
+
+`evaluate/s` is the number of native viewability passes (one per rendered
+frame while scrolling), `resizes/s` webview viewport resizes, `js/s`
+`_onViewability` calls into ad pages, `geometryIn/s` geometry batches from
+Dart with the time spent handling them, `viewabilityOut/s` calls into your
+`onViewabilityChange`, and `webviewsCreated` new webviews (each one is an
+ad request). A list that janks while an ad crosses the edge should show
+`resizes/s` ≤ 10 per ad, `viewabilityOut/s` ≤ 15 per listening ad, and
+`webviewsCreated` only once per ad — more means something recreates the
+widgets (see §5 on builder lists).
+
+The example app contains a reproducible harness: a 120-row builder list
+with three ads, scripted flings and a `[PERF]` frame report
+(`SchedulerBinding.addTimingsCallback`), with the native counters on:
+
+```bash
+cd Flutter/webadview_flutter/example
+flutter run -d <device> --dart-define=SN_PERF=true --dart-define=SN_CONSENT_ACCEPT_ALL=true
+#   SN_PERF_ADS=false   same list with grey boxes instead of ads (the control run)
+#   SN_PERF_CACHE=4000  large cacheExtent: every ad stays mounted
+#   SN_PERF_LISTEN=true attach onViewabilityChange to every ad
+#   SN_PERF_AUTO=false  fling by hand instead of the script
+```
+
+Run it with ads on and off on the same physical device; the difference is
+what the SDK costs during scroll.
 
 ## 9. Run the example
 
@@ -364,7 +403,8 @@ flutter test integration_test/app_didomi_mode_test.dart -d <device> --dart-defin
 | Ads never load | `initialize` called before `runApp`? Consent answered? Deployment target 16? |
 | `[SN] [ERROR] … rejected by the native SDK (activity_not_fragment …)` on Android, `isInitialized` false | `MainActivity` must extend `FlutterFragmentActivity` (§1). |
 | Ads never render on Android, `adSize` never arrives | The plugin installs a document-start shim for the template's `window.webkit.messageHandlers.nativeBridge`; with debug on (§8) check `adb logcat -s SN` for `document-start scripts unsupported` (very old WebView). |
-| Ads never fetch early in a builder list | `cacheExtent: LazyLoadAdScope.recommendedCacheExtent(context)` (§5). |
+| Ads never fetch early in a builder list | `scrollCacheExtent: LazyLoadAdScope.recommendedCacheExtent(context)` (§5). |
+| The list janks while scrolling | Turn debug on and read `[SN] [PERF]` (§8): `webviewsCreated` repeating for the same ad means the widget is recreated (a `key` that changes, a rebuilt subtree, a second `LazyLoadAdScope`); run the example's harness with `SN_PERF=true` and `SN_PERF_ADS=false` on the same device to size the SDK's share. |
 | Ads under a pinned header count as visible | `viewportInsets` on the scope (§5). |
 | Taps don't open ads | Don't wrap `WebAdView` in a `GestureDetector` that claims taps; vertical drags stay with the list by design. |
 | Build error mentioning `WebAdViewSDK` path | The checkout must be the whole repository; otherwise set `WEBADVIEW_SDK_PATH=/absolute/path/to/the-repo` (§1) or reset SwiftPM caches (`rm -rf ~/Library/Caches/org.swift.swiftpm/manifests`). |

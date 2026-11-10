@@ -47,5 +47,10 @@ Future<void> main() async {
   }
 
   await DebugSettings.instance.load();
+  if (DemoConfig.perfMode) {
+    // The harness reads the native [SN] [PERF] counters: they only exist
+    // while the debug flag is on.
+    await WebAdViewSdk.setDebugEnabled(true);
+  }
   runApp(const NewsHubApp());
 }

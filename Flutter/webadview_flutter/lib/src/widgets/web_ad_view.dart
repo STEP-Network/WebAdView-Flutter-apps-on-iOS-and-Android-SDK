@@ -95,6 +95,9 @@ class _WebAdViewState extends State<WebAdView> implements AdScopeClient {
   @override
   String get adUnitId => widget.adUnitId;
 
+  @override
+  bool get wantsViewability => widget.onViewabilityChange != null;
+
   Size get _initialSize => Size(widget.initialWidth, widget.initialHeight);
 
   bool get _showsNativeView =>
@@ -141,10 +144,16 @@ class _WebAdViewState extends State<WebAdView> implements AdScopeClient {
         _resetImpression();
         scope.registerAd(this);
       }
-    } else if (oldWidget.initialWidth != widget.initialWidth ||
-        oldWidget.initialHeight != widget.initialHeight ||
-        oldWidget.showAdLabel != widget.showAdLabel) {
-      _scope?.markNeedsReport();
+    } else {
+      if ((oldWidget.onViewabilityChange == null) !=
+          (widget.onViewabilityChange == null)) {
+        _scope?.updateViewabilityInterest(this);
+      }
+      if (oldWidget.initialWidth != widget.initialWidth ||
+          oldWidget.initialHeight != widget.initialHeight ||
+          oldWidget.showAdLabel != widget.showAdLabel) {
+        _scope?.markNeedsReport();
+      }
     }
   }
 
@@ -321,6 +330,8 @@ class _ClientProxy implements AdScopeClient {
   BoxHandle get frameHandle => _state.frameHandle;
   @override
   BoxHandle get creativeHandle => _state.creativeHandle;
+  @override
+  bool get wantsViewability => false;
   @override
   void onLoadState(AdLoadState state) {}
   @override

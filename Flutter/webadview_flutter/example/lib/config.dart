@@ -26,6 +26,23 @@ abstract final class DemoConfig {
   static const bool acceptAllConsent =
       bool.fromEnvironment('SN_CONSENT_ACCEPT_ALL', defaultValue: false);
 
+  /// Scroll-performance harness (`--dart-define=SN_PERF=true`): a 120-row
+  /// list with three ads, scripted flings and a `[PERF]` frame report, with
+  /// the native `[SN] [PERF]` counters switched on. `SN_PERF_ADS=false`
+  /// replaces the ads with grey boxes (the control run); `SN_PERF_AUTO=false`
+  /// leaves the flinging to you; `SN_PERF_LISTEN=true` attaches an
+  /// `onViewabilityChange` listener to every ad (native → Dart fan-out on).
+  static const bool perfMode = bool.fromEnvironment('SN_PERF', defaultValue: false);
+  static const bool perfAds = bool.fromEnvironment('SN_PERF_ADS', defaultValue: true);
+  static const bool perfAuto = bool.fromEnvironment('SN_PERF_AUTO', defaultValue: true);
+  static const bool perfListen = bool.fromEnvironment('SN_PERF_LISTEN', defaultValue: false);
+
+  /// `SN_PERF_CACHE=<logical px>`: the list's `cacheExtent`. 0 (default)
+  /// keeps Flutter's default (250 px), so ad widgets are disposed as soon as
+  /// they scroll out of it — the builder-list case. A large value (e.g.
+  /// 4000) keeps every ad mounted: the "three live ads" case.
+  static const int perfCacheExtent = int.fromEnvironment('SN_PERF_CACHE', defaultValue: 0);
+
   /// Which of the SDK's three consent modes the demo runs in:
   ///
   /// - `didomi` (default): the SDK owns Didomi and shows the notice.

@@ -64,10 +64,14 @@ class FakeWebAdViewPlatform extends WebAdViewPlatform {
     scopeVisible[scopeId] = visible;
   }
 
+  final Map<String, bool> wantsViewability = <String, bool>{};
+
   @override
-  Future<void> registerAd(String scopeId, String adUnitId) async {
+  Future<void> registerAd(String scopeId, String adUnitId,
+      {bool wantsViewability = true}) async {
     calls.add('registerAd:$adUnitId');
     ads[scopeId]?.add(adUnitId);
+    this.wantsViewability[adUnitId] = wantsViewability;
   }
 
   @override

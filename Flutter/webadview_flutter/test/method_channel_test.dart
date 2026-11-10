@@ -118,7 +118,8 @@ void main() {
       await platform.disposeScope('s1');
       expect(sent.map((c) => c.method).toList(),
           <String>['registerAd', 'setScopeVisible', 'unregisterAd', 'disposeScope']);
-      expect(sent[0].arguments, <String, Object?>{'scopeId': 's1', 'adUnitId': 'ad-a'});
+      expect(sent[0].arguments,
+          <String, Object?>{'scopeId': 's1', 'adUnitId': 'ad-a', 'wantsViewability': true});
       expect(sent[1].arguments, <String, Object?>{'scopeId': 's1', 'visible': false});
       expect(sent[3].arguments, <String, Object?>{'scopeId': 's1'});
     });

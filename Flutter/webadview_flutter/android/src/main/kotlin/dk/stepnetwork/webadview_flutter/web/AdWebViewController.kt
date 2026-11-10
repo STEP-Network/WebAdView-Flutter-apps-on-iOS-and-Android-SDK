@@ -24,6 +24,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import dk.stepnetwork.webadview_flutter.SdkState
 import dk.stepnetwork.webadview_flutter.core.AdLoadState
+import dk.stepnetwork.webadview_flutter.core.PerfCounters
 import dk.stepnetwork.webadview_flutter.core.BridgeMessage
 import dk.stepnetwork.webadview_flutter.core.RemoteLazyLoadConfig
 import dk.stepnetwork.webadview_flutter.core.SNLog
@@ -57,8 +58,15 @@ class AdWebViewController(
     private val viewportResizingEnabled: Boolean,
     private val debugEnabled: Boolean,
     private val remoteStore: RemoteLazyLoadStore,
-    private val callbacks: Callbacks,
+    callbacks: Callbacks,
 ) {
+    /** The host's channel; swapped when a retained controller re-attaches to a new platform view. */
+    var callbacks: Callbacks = callbacks
+
+    /** The last `adSize` the page reported (replayed to a host that re-attaches). */
+    var lastAdSize: Pair<Double, Double>? = null
+        private set
+
     interface Callbacks {
         fun onAdSize(width: Double, height: Double)
         fun onActiveViewImpression(slotId: String)
@@ -93,8 +101,10 @@ class AdWebViewController(
     private val unsubscribers = ArrayList<() -> Unit>()
     private val consentListener: () -> Unit = { onConsentChanged() }
     private var disposed = false
+    val isDisposed: Boolean get() = disposed
 
     init {
+        container.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> onContainerLayout() }
         setupWebView()
         // Subscribe FIRST, then re-arm — the tracker does not replay.
         unsubscribers += scope.addLoadStateListener(adUnitId) { state -> if (state == AdLoadState.DISPLAYED) renderIfPageReadyElseDefer() }
@@ -110,6 +120,7 @@ class AdWebViewController(
     // ---- WebView setup ---------------------------------------------------------
 
     private fun setupWebView() {
+        val creationStart = System.nanoTime()
         val wv = WebView(context)
         wv.settings.apply {
             javaScriptEnabled = true
@@ -145,6 +156,7 @@ class AdWebViewController(
         wv.layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         container.addView(wv)
         webView = wv
+        PerfCounters.recordWebViewCreation((System.nanoTime() - creationStart) / 1_000_000.0)
         SNLog.d("[SN] [NATIVE] WebAdViewController: WebView setup")
     }
 
@@ -174,6 +186,7 @@ class AdWebViewController(
                 SNLog.d("[SN] [WebAdView] [HTML] [${msg.level.uppercase()}] ${msg.message}")
             is BridgeMessage.AdSize -> {
                 SNLog.d("[SN] [WebAdView] [HTML] [adSize] width: ${msg.width}, height: ${msg.height}")
+                lastAdSize = msg.width to msg.height
                 callbacks.onAdSize(msg.width, msg.height)
                 scope.tracker.markRendered(adUnitId) // the creative exists now: viewability may start counting
                 if (!hasRenderedAd) {
@@ -354,6 +367,7 @@ class AdWebViewController(
         val wv = webView ?: return
         if (!hasLoadedContent) return
         val json = ViewabilityPayload.json(update, System.currentTimeMillis())
+        PerfCounters.increment(PerfCounters.Key.JS_VIEWABILITY_SENDS)
         wv.evaluateJavascript("window.stepnetwork && window.stepnetwork._onViewability && window.stepnetwork._onViewability($json);", null)
     }
 
@@ -400,6 +414,7 @@ class AdWebViewController(
         lp.leftMargin = leftPx
         lp.topMargin = topPx
         wv.layoutParams = lp
+        PerfCounters.increment(PerfCounters.Key.WEBVIEW_RESIZES)
         // The scroll range only grows after the smaller layout is applied.
         wv.post { wv.scrollTo(scrollX, scrollY) }
         if (regime != lastAppliedRegime) {

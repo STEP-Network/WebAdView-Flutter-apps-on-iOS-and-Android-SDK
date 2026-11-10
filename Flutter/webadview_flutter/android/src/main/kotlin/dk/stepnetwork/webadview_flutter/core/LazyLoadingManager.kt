@@ -84,6 +84,31 @@ class LazyLoadingManager(
         }
     }
 
+    /**
+     * Batch form for out-of-process hosts: viewport + all ad frames in one
+     * call → at most one throttled check (and one immediate check for new ads).
+     */
+    fun updateGeometry(bounds: Rect, frames: Map<String, Rect>) {
+        var changed = false
+        var anyNew = false
+        if (scrollViewBounds != bounds) {
+            scrollViewBounds = bounds
+            changed = true
+        }
+        for ((adId, frame) in frames) {
+            if (adUnitFrames[adId] == frame) continue
+            if (adUnitFrames[adId] == null) anyNew = true
+            adUnitFrames[adId] = frame
+            changed = true
+        }
+        if (!changed) return
+        triggerVisibilityCheck()
+        if (anyNew && !scrollViewBounds.isEmpty) {
+            SNLog.d("[SN] [LLM] New ad frame(s) registered, performing immediate visibility check")
+            checkAdVisibility()
+        }
+    }
+
     /** Forgets an ad unit entirely (frame, state, unload candidacy). */
     fun removeAd(adId: String) {
         adUnitFrames.remove(adId)
@@ -91,6 +116,16 @@ class LazyLoadingManager(
         if (adStates.remove(adId) != null) {
             SNLog.d("[SN] [LLM] Ad $adId removed from lazy loading")
         }
+    }
+
+    /**
+     * Forgets an ad's FRAME but keeps its load state: the host stopped
+     * reporting geometry (disposed widget) while the ad's WebView is kept
+     * alive for re-attachment. No frame → no transitions until it reports again.
+     */
+    fun detachAd(adId: String) {
+        adUnitFrames.remove(adId)
+        unloadCandidates.remove(adId)
     }
 
     fun dispose() {

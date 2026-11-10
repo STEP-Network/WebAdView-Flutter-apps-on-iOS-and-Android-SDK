@@ -1,4 +1,5 @@
 import Flutter
+import QuartzCore
 import UIKit
 import WebAdViewSDK
 
@@ -175,6 +176,8 @@ public final class WebAdViewFlutterPlugin: NSObject, FlutterPlugin {
             return result(FlutterError(code: "unknown_scope", message: "No scope \(scopeId) — call createScope first", details: nil))
         }
         let channel = self.channel
+        // Absent = true (older Dart); false = the widget has no onViewabilityChange.
+        let wantsViewability = GeometryCodec.bool(args["wantsViewability"], default: true)
         entry.registerAd(
             adUnitId,
             onLoadState: { state in
@@ -182,9 +185,10 @@ public final class WebAdViewFlutterPlugin: NSObject, FlutterPlugin {
                     "scopeId": scopeId, "adUnitId": adUnitId, "state": state.rawValue,
                 ])
             },
-            onViewability: { update in
+            onViewability: wantsViewability ? { update in
+                PerfCounters.increment(.hostViewabilityOut)
                 channel.invokeMethod("onViewability", arguments: Self.encode(update, scopeId: scopeId))
-            }
+            } : nil
         )
         result(nil)
     }
@@ -194,20 +198,20 @@ public final class WebAdViewFlutterPlugin: NSObject, FlutterPlugin {
         guard let entry = scopes[scopeId] else { return result(nil) } // stale after disposeScope — ignore
         guard let viewport = GeometryCodec.rect(from: args["viewport"]) else { return result(Self.badArgs("viewport")) }
 
-        // Ads first, then the viewport: a new ad frame arriving while the
-        // manager's bounds are already set triggers an immediate check.
+        let start = CACurrentMediaTime()
+        var geometry: [String: WebAdScope.AdGeometry] = [:]
         if let ads = args["ads"] as? [String: Any] {
+            geometry.reserveCapacity(ads.count)
             for (adUnitId, raw) in ads {
-                guard let rects = raw as? [String: Any] else { continue }
-                if let frame = GeometryCodec.rect(from: rects["frame"]) {
-                    entry.scope.updateAdFrame(adUnitId, frame: frame)
-                }
-                if let creative = GeometryCodec.rect(from: rects["creative"]) {
-                    entry.scope.updateCreativeFrame(adUnitId, frame: creative)
-                }
+                guard let rects = raw as? [String: Any],
+                      let frame = GeometryCodec.rect(from: rects["frame"]),
+                      let creative = GeometryCodec.rect(from: rects["creative"]) else { continue }
+                geometry[adUnitId] = WebAdScope.AdGeometry(frame: frame, creative: creative)
             }
         }
-        entry.scope.updateViewport(viewport)
+        // One batch → one pass of each state machine (not one per ad).
+        entry.scope.updateGeometry(viewport: viewport, ads: geometry)
+        PerfCounters.recordGeometryHandler(micros: (CACurrentMediaTime() - start) * 1_000_000)
         result(nil)
     }
 
